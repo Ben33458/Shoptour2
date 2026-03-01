@@ -31,21 +31,21 @@
 | PROJ-17 | Admin: Dashboard (anpassbar, KPIs, Touren-Übersicht) | Planned | [PROJ-17-admin-dashboard.md](PROJ-17-admin-dashboard.md) | 2026-02-28 |
 | PROJ-18 | Admin: Benutzer & Rollen (CRUD, Rollen, granulare Rechte) | Planned | [PROJ-18-admin-benutzer-rollen.md](PROJ-18-admin-benutzer-rollen.md) | 2026-02-28 |
 | PROJ-19 | Admin: Einstellungen & Konfiguration (APIs, Email, Mahnwesen, Vorlagen) | Planned | [PROJ-19-admin-einstellungen.md](PROJ-19-admin-einstellungen.md) | 2026-02-28 |
-| PROJ-20 | Stammsortiment (Schnellbestellung, Kundenbestand, Mindestbestand, Notizen) | Planned | [PROJ-20-stammsortiment.md](PROJ-20-stammsortiment.md) | 2026-03-01 |
-| PROJ-21 | Unterbenutzer & Kundenrechte (Büro-Accounts) | Planned | [PROJ-21-unterbenutzer-kundenrechte.md](PROJ-21-unterbenutzer-kundenrechte.md) | 2026-03-01 |
-| PROJ-22 | Veranstaltungsbestellungen + Festinventar (Leihgeräte, Zeitfenster) | Planned | [PROJ-22-veranstaltungsbestellungen.md](PROJ-22-veranstaltungsbestellungen.md) | 2026-03-01 |
-| PROJ-23 | Admin: Lagerverwaltung (Warehouses, Stock, Bewegungen) | Planned | [PROJ-23-lagerverwaltung.md](PROJ-23-lagerverwaltung.md) | 2026-03-01 |
-| PROJ-24 | Admin: CSV-Importe (Kunden, Produkte, Lieferanten, LMIV) | Planned | [PROJ-24-csv-importe.md](PROJ-24-csv-importe.md) | 2026-03-01 |
-| PROJ-25 | Admin: Berichte & Reports (Umsatz, Marge, Pfand, Tour-KPIs) | Planned | [PROJ-25-berichte-reports.md](PROJ-25-berichte-reports.md) | 2026-03-01 |
-| PROJ-26 | Admin: Aufgabensystem (wiederkehrend, Verantwortliche) | Planned | [PROJ-26-aufgabensystem.md](PROJ-26-aufgabensystem.md) | 2026-03-01 |
-| PROJ-27 | Admin: Newsletter (Gruppen, Abmeldung, Selbstverwaltung) | Planned | [PROJ-27-newsletter.md](PROJ-27-newsletter.md) | 2026-03-01 |
-| PROJ-28 | Admin: Log & Audit (gefiltert, Dashboard) | Planned | [PROJ-28-log-audit.md](PROJ-28-log-audit.md) | 2026-03-01 |
-| PROJ-29 | Admin: Emails & Support (Posteingang, Tickets) | Planned | [PROJ-29-emails-support.md](PROJ-29-emails-support.md) | 2026-03-01 |
-| PROJ-30 | Admin: CMS-Seiten (Impressum, AGB, Landing Pages) | Planned | [PROJ-30-cms-seiten.md](PROJ-30-cms-seiten.md) | 2026-03-01 |
-| PROJ-31 | Mahnwesen (automatisch, Zahlungserinnerungen, Kontoübersicht) | Planned | [PROJ-31-mahnwesen.md](PROJ-31-mahnwesen.md) | 2026-03-01 |
-| PROJ-32 | Admin: Einkauf (PurchaseOrders, Workflow) | Planned | [PROJ-32-einkauf.md](PROJ-32-einkauf.md) | 2026-03-01 |
-| PROJ-33 | POS-System / Kasse (Barcode, Sofortverkauf) | Planned | [PROJ-33-pos-system.md](PROJ-33-pos-system.md) | 2026-03-01 |
-| PROJ-34 | Umsatzmeldungen (pro Hersteller/Lieferant, Rhythmus, Email) | Planned | [PROJ-34-umsatzmeldungen.md](PROJ-34-umsatzmeldungen.md) | 2026-03-01 |
+| PROJ-20 | Stammsortiment (Schnellbestellung, Kundenbestand, Mindestbestand, Notizen) | In Progress | [PROJ-20-stammsortiment.md](PROJ-20-stammsortiment.md) | 2026-03-01 |
+| PROJ-21 | Unterbenutzer & Kundenrechte (Büro-Accounts) | In Progress | [PROJ-21-unterbenutzer-kundenrechte.md](PROJ-21-unterbenutzer-kundenrechte.md) | 2026-03-01 |
+| PROJ-22 | Veranstaltungsbestellungen + Festinventar (Leihgeräte, Zeitfenster) | In Progress | [PROJ-22-veranstaltungsbestellungen.md](PROJ-22-veranstaltungsbestellungen.md) | 2026-03-01 |
+| PROJ-23 | Admin: Lagerverwaltung (Warehouses, Stock, Bewegungen) | In Progress | [PROJ-23-lagerverwaltung.md](PROJ-23-lagerverwaltung.md) | 2026-03-01 |
+| PROJ-24 | Admin: CSV-Importe (Kunden, Produkte, Lieferanten, LMIV) | In Progress | [PROJ-24-csv-importe.md](PROJ-24-csv-importe.md) | 2026-03-01 |
+| PROJ-25 | Admin: Berichte & Reports (Umsatz, Marge, Pfand, Tour-KPIs) | In Progress | [PROJ-25-berichte-reports.md](PROJ-25-berichte-reports.md) | 2026-03-01 |
+| PROJ-26 | Admin: Aufgabensystem (wiederkehrend, Verantwortliche) | In Progress | [PROJ-26-aufgabensystem.md](PROJ-26-aufgabensystem.md) | 2026-03-01 |
+| PROJ-27 | Admin: Newsletter (Gruppen, Abmeldung, Selbstverwaltung) | In Progress | [PROJ-27-newsletter.md](PROJ-27-newsletter.md) | 2026-03-01 |
+| PROJ-28 | Admin: Log & Audit (gefiltert, Dashboard) | In Progress | [PROJ-28-log-audit.md](PROJ-28-log-audit.md) | 2026-03-01 |
+| PROJ-29 | Admin: Emails & Support (Posteingang, Tickets) | In Progress | [PROJ-29-emails-support.md](PROJ-29-emails-support.md) | 2026-03-01 |
+| PROJ-30 | Admin: CMS-Seiten (Impressum, AGB, Landing Pages) | In Progress | [PROJ-30-cms-seiten.md](PROJ-30-cms-seiten.md) | 2026-03-01 |
+| PROJ-31 | Mahnwesen (automatisch, Zahlungserinnerungen, Kontoübersicht) | In Progress | [PROJ-31-mahnwesen.md](PROJ-31-mahnwesen.md) | 2026-03-01 |
+| PROJ-32 | Admin: Einkauf (PurchaseOrders, Workflow) | In Progress | [PROJ-32-einkauf.md](PROJ-32-einkauf.md) | 2026-03-01 |
+| PROJ-33 | POS-System / Kasse (Barcode, Sofortverkauf) | In Progress | [PROJ-33-pos-system.md](PROJ-33-pos-system.md) | 2026-03-01 |
+| PROJ-34 | Umsatzmeldungen (pro Hersteller/Lieferant, Rhythmus, Email) | In Progress | [PROJ-34-umsatzmeldungen.md](PROJ-34-umsatzmeldungen.md) | 2026-03-01 |
 | PROJ-35 | Admin: Kassenverwaltung (Kassen, Kassenbuch, Transfers, Kontrolliert) | Planned | [PROJ-35-admin-kassenverwaltung.md](PROJ-35-admin-kassenverwaltung.md) | 2026-02-28 |
 | PROJ-36 | Schichtplanung, Zeiterfassung & Urlaubsverwaltung (Stempeluhr, Schichtbericht, Urlaub) | Planned | [PROJ-36-schichtplanung-zeiterfassung-urlaub.md](PROJ-36-schichtplanung-zeiterfassung-urlaub.md) | 2026-02-28 |
 

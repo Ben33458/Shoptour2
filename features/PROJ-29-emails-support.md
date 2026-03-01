@@ -47,7 +47,103 @@ Einfaches internes Support-System: Eingehende Kunden-Emails (über ein Postfach 
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/support/
+│
+├── index                   ← Ticket-Liste
+│   ├── Filter: Status (offen / in Bearbeitung / erledigt) | Bearbeiter | ungelesen
+│   ├── Tabelle: Betreff | Absender | Eingegangen | Status | Bearbeiter
+│   └── Ungelesene Tickets oben / fett hervorgehoben
+│
+└── {id}/                   ← Ticket-Detail
+    ├── Kundenzuordnung (Suche + Verknüpfung)
+    ├── Kundeninfo-Panel (wenn verknüpft): letzte Bestellungen, offene Rechnungen
+    ├── Bearbeiter-Zuweisung (Dropdown)
+    ├── Status-Änderung
+    ├── Thread-Ansicht
+    │   ├── Eingehende Emails (blau unterlegt)
+    │   ├── Gesendete Antworten (grün unterlegt)
+    │   └── Interne Notizen (gelb unterlegt — nicht an Kunden)
+    ├── Antwort-Box (Textarea) + Anhänge
+    └── [Antwort senden] [Interne Notiz speichern]
+```
+
+### Datenmodell
+
+```
+support_tickets
+├── id, subject, from_email, from_name
+├── message_id   VARCHAR UNIQUE  ← Email Message-ID (Duplikat-Schutz)
+├── customer_id  → customers (nullable)
+├── assigned_user_id → users (nullable)
+├── status  ENUM: open | in_progress | done
+├── unread  BOOL (DEFAULT TRUE)
+└── company_id
+
+support_ticket_messages
+├── id, ticket_id → support_tickets
+├── direction  ENUM: inbound | outbound
+├── is_internal_note  BOOL
+├── body_html, body_text
+├── from_email, from_name (für inbound)
+├── user_id → users (nullable)  ← wer hat geantwortet?
+└── created_at
+
+support_ticket_attachments
+├── ticket_message_id → support_ticket_messages
+├── filename, path, mime_type, size
+└── company_id
+```
+
+### IMAP-Polling
+
+```
+deferred_task: EmailFetchJob (alle 5 Minuten via Cron):
+  1. IMAP-Verbindung herstellen (aus Einstellungen PROJ-19)
+  2. Ungelesene Emails abrufen
+  3. Je Email:
+     a. Message-ID → Duplikat? → Überspringen
+     b. In-Reply-To vorhanden + passendes Ticket? → Dem Thread zuordnen
+     c. Kein Thread → Neues Ticket erstellen
+     d. Anhänge in Storage speichern
+  4. Emails als gelesen markieren (im IMAP-Postfach)
+```
+
+### Thread-Zuordnung (Antwort-Matching)
+
+```
+Neue Email eingehend:
+  1. Prüfe In-Reply-To Header → suche Message-ID in support_ticket_messages
+  2. Gefunden → ticket_id des Eltern-Messages verwenden
+  3. Ticket-Status war 'done' → automatisch auf 'open' zurücksetzen
+  4. Nicht gefunden → neues Ticket
+
+Alternative: Betreff-Matching (als Fallback):
+  Betreff enthält „[Ticket #123]" → Ticket #123 zuordnen
+  (Admin-Antworten erhalten diesen Tag automatisch im Betreff)
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| IMAP-Polling (kein Webhook) | Shared-Hosting hat keinen öffentlichen Webhook-Endpunkt; IMAP ist universell |
+| `message_id` als Unique-Key | Verhindert Duplikate beim erneuten Polling zuverlässig |
+| Interne Notizen | Mitarbeiter können intern kommunizieren ohne Kunden-Email |
+| Automatisches Wiederöffnen | Wenn Kunde antwortet auf erledigtes Ticket, geht es nicht unter |
+
+### Neue Controller / Services
+
+```
+Admin\SupportTicketController        ← index, show, update (Status/Bearbeiter)
+Admin\SupportTicketMessageController ← store (Antwort/Notiz), destroy
+Admin\SupportTicketKundeController   ← update (Kundenzuordnung)
+EmailFetchService                   ← fetchNewEmails(), processEmail()
+EmailFetchJob                       ← via deferred_tasks, alle 5 Minuten
+```
 
 ## QA Test Results
 _To be added by /qa_

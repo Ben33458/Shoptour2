@@ -50,7 +50,116 @@ Einfaches internes Newsletter-System: Kunden können Newsletter-Gruppen zugeordn
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/newsletter/
+│
+├── index                   ← Versendete Newsletter (Archiv)
+│   ├── Liste: Betreff | Datum | Empfänger | Status
+│   └── [Neuer Newsletter]
+│
+├── create                  ← Newsletter erstellen
+│   ├── Betreff, Absender-Name
+│   ├── Empfänger: Gruppen-Multiselect + Empfängeranzahl-Vorschau
+│   ├── WYSIWYG HTML-Editor (Inhalt)
+│   ├── Anhänge (max. 3 Dateien)
+│   ├── [Test-Versand] → Modal (eigene Email eingeben)
+│   └── [Newsletter versenden] → Bestätigungs-Dialog
+│
+├── gruppen/                ← Newsletter-Gruppen
+│   ├── index (Name, Beschreibung, Anzahl Mitglieder)
+│   └── create / edit
+│
+└── {id}/                   ← Newsletter-Detail (nach Versand)
+    ├── Betreff, Inhalt (readonly)
+    ├── Versandstatistik: Gesendet / Fehlgeschlagen
+    └── [Erneut senden] (Fehlgeschlagene)
+
+/konto/newsletter           ← Kundenkonto-Selbstverwaltung
+└── Switch: Newsletter abonnieren / abmelden
+```
+
+### Datenmodell
+
+```
+newsletter_groups
+├── id, name, description
+└── company_id
+
+newsletter_group_members  [Pivot]
+├── group_id → newsletter_groups
+└── customer_id → customers
+
+newsletters
+├── id, subject, from_name
+├── body_html, body_text
+├── status ENUM: draft | sending | sent
+├── sent_at, total_recipients, sent_count, failed_count
+└── company_id
+
+newsletter_sends  [Je Empfänger]
+├── newsletter_id, email
+├── status ENUM: pending | sent | failed
+└── sent_at (nullable)
+
+customers  [erweitert]
+└── newsletter_opt_out BOOL (DEFAULT FALSE)
+
+newsletter_unsubscribe_tokens  [Abmelde-Link]
+├── customer_id, token (hashed, unique)
+└── created_at  (kein expires_at — dauerhaft gültig)
+```
+
+### Versand-Ablauf
+
+```
+Admin klickt [Versenden]:
+  1. Empfänger bestimmen: newsletter_group_members WHERE NOT opt_out
+  2. newsletter_sends-Einträge erstellen (status=pending)
+  3. deferred_task erstellen: „newsletter_send_{id}"
+  4. Weiterleitung mit Toast „Versand wird vorbereitet"
+
+deferred_task (via Cron):
+  Verarbeitung in Batches à 100 Emails
+  Je Email: SMTP-Versand + Abmelde-Link anhängen
+  → newsletter_sends.status = sent | failed
+  → newsletters.sent_count / failed_count aktualisieren
+```
+
+### Abmelde-Mechanismus
+
+```
+Footer jeder Email:
+  [Vom Newsletter abmelden]
+  → /newsletter/abmelden/{token}
+
+Laravel-Route (ohne Auth):
+  1. Token validieren → customer_id ermitteln
+  2. customers.newsletter_opt_out = true
+  3. Alle newsletter_group_members für diesen Kunden löschen
+  4. Bestätigungsseite anzeigen
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Eigenes System (kein Mailchimp) | Kundendaten bleiben intern; DSGVO einfacher; kein monatliches Abo |
+| Batched SMTP-Versand | Shared-Hosting-SMTP hat Limits; Batches verhindern Blacklisting |
+| Permanente Abmelde-Token | Keine Ablaufzeit = kein „Link abgelaufen"-Problem |
+| Test-Versand vor Massenversand | Verhindert fehlerhafte Emails an alle Kunden |
+
+### Neue Controller / Services
+
+```
+Admin\NewsletterController          ← index, create, store, show, resend
+Admin\NewsletterGruppeController    ← CRUD Gruppen + Mitglieder-Verwaltung
+Shop\NewsletterAbmeldeController    ← show (Abmelde-Bestätigung), store (Abmeldung)
+Shop\NewsletterPraeferenzController ← update (Kundenkonto-Einstellung)
+NewsletterDispatchService          ← buildRecipients(), dispatchBatch()
+```
 
 ## QA Test Results
 _To be added by /qa_

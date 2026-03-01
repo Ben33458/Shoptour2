@@ -49,7 +49,104 @@ Import-System für Massendaten aus CSV-Dateien. Unterstützte Import-Typen: Kund
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/import/
+│
+├── index                   ← Import-Auswahl + Historie
+│   ├── Import-Typ wählen (Karten: Produkte / Kunden / Lieferanten / LMIV)
+│   └── Import-Protokoll-Liste: Datum | Typ | Gesamt | OK | Fehler | Status
+│
+└── {typ}/                  ← Import-Workflow (3 Schritte)
+    │
+    ├── Schritt 1: Datei hochladen
+    │   ├── Drag & Drop Upload-Zone (CSV, max. 10 MB)
+    │   ├── Trennzeichen wählen (Komma / Semikolon / Tab)
+    │   └── Encoding wählen (UTF-8 / ISO-8859-1)
+    │
+    ├── Schritt 2: Spalten-Mapping + Vorschau
+    │   ├── Tabelle: erste 5 Zeilen der CSV
+    │   ├── Je Spalte: Dropdown „Welches Feld?" (oder „ignorieren")
+    │   ├── Validierungsvorschau: erste 20 Zeilen mit Fehlermarkierung
+    │   └── Zusammenfassung: X gültig / Y fehlerhaft
+    │
+    └── Schritt 3: Import ausführen + Ergebnis
+        ├── [Import starten] → Verarbeitung (Fortschrittsbalken)
+        └── Ergebnis: Neu / Aktualisiert / Übersprungen / Fehler
+            └── [Fehler-CSV herunterladen]
+```
+
+### Datenmodell
+
+```
+import_logs  [Import-Protokoll]
+├── id
+├── type  ENUM: products | customers | suppliers | lmiv
+├── original_filename, total_rows
+├── imported (neu), updated, skipped, failed
+├── status ENUM: pending | processing | done | failed
+├── error_file_path (nullable)  ← Fehler-CSV im Storage
+├── user_id, created_at
+└── company_id
+```
+
+### Import-Ablauf
+
+```
+Schritt 2 (Validierungsvorschau) — kein Speichern:
+  CsvImportService::validate($file, $mapping)
+  → parst ersten 100 Zeilen
+  → prüft Pflichtfelder, Formate, Duplikate
+  → gibt ValidationResult zurück (keine DB-Änderung)
+
+Schritt 3 (Import ausführen):
+  ≤ 500 Zeilen → synchron verarbeiten
+  > 500 Zeilen → deferred_task erstellen → Email bei Fertigstellung
+
+Fehlerbehandlung:
+  Zeile ungültig → überspringen, in Fehler-CSV schreiben
+  Zeile gültig   → importieren
+  → kein Abbruch bei Teilfehler
+```
+
+### Import-Typen: Match-Logik
+
+```
+Produkt-Import:
+  EAN vorhanden + EAN in DB → UPDATE
+  EAN vorhanden, nicht in DB → CREATE
+  keine EAN → CREATE (neue Artikelnummer generiert)
+
+Kunden-Import:
+  Email vorhanden in DB → UPDATE oder SKIP (konfigurierbar)
+  Email nicht in DB → CREATE
+
+LMIV-Import:
+  Match per EAN → UPDATE Nährwert-/Allergen-Felder auf dem Produkt
+  EAN nicht gefunden → Zeile als Fehler markieren
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| 3-Schritt-Wizard | Benutzer sieht Fehler BEVOR Daten importiert werden; verhindert Datenmüll |
+| Synchron vs. deferred | Kleine Importe sofort fertig; große Importe im Hintergrund ohne Browser-Timeout |
+| Fehler-CSV als Download | Admin kann Fehler in Excel korrigieren und erneut hochladen; kein manuelles Nacharbeiten |
+| `League\Csv` Bibliothek | Robuste UTF-8/Encoding-Unterstützung; kein `fgetcsv()`-Workaround nötig |
+
+### Neue Controller / Services
+
+```
+Admin\ImportController          ← index, show (Protokoll), store (Upload+Mapping)
+Admin\ImportExecuteController   ← store (Ausführen)
+CsvImportService               ← validate(), execute(), generateErrorCsv()
+ProductImportHandler           ← importRow(), validateRow()
+CustomerImportHandler          ← importRow(), validateRow()
+LmivImportHandler              ← importRow(), validateRow()
+```
 
 ## QA Test Results
 _To be added by /qa_

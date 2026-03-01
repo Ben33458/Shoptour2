@@ -49,7 +49,96 @@ Zentrales Audit-Log für alle relevanten Systemaktionen: Wer hat was wann geänd
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/audit/
+│
+└── index                   ← Audit-Log-Liste
+    ├── Filter-Panel
+    │   ├── Datum (Von / Bis)
+    │   ├── Benutzer (Dropdown)
+    │   ├── Aktionstyp (Dropdown: z.B. customer.updated, price.changed)
+    │   └── Objekt-Typ (Dropdown: Kunde / Produkt / Bestellung / ...)
+    │
+    ├── Tabelle: Datum | Benutzer | Aktion | Objekt | Details
+    │   └── Zeile klickbar → Expandable Row (alte Werte / neue Werte als JSON-Diff)
+    │
+    └── [Als CSV exportieren] (gefilterte Ansicht)
+```
+
+### Datenmodell
+
+```
+audit_logs  [append-only, kein Update/Delete möglich]
+├── id
+├── user_id     → users (nullable)   ← NULL = System
+├── action      VARCHAR  (z.B. „customer.address.updated")
+├── subject_type VARCHAR  (z.B. „Customer")
+├── subject_id   INT
+├── subject_label VARCHAR  (Name-Snapshot zum Zeitpunkt der Aktion)
+├── old_values  JSON (nullable)
+├── new_values  JSON (nullable)
+├── ip_address  VARCHAR
+├── created_at
+└── company_id
+
+Indizes: (company_id, created_at DESC), (user_id), (subject_type, subject_id)
+```
+
+### Logging-Mechanismus
+
+```
+AuditLogger::log($action, $subject, $oldValues, $newValues):
+  → Erstellt audit_logs-Eintrag
+  → Aufruf an strategischen Punkten (nicht via Model-Observer,
+    da gezieltes Logging wichtiger ist als automatisches)
+
+Automatisch geloggte Aktionen:
+  customer.*    → CustomerController (update, destroy)
+  price.*       → PreisController (store, update, destroy)
+  invoice.*     → InvoiceService (finalize, cancel)
+  user.*        → UserController (store, update, toggleActive)
+  order.status  → BestellungController (updateStatus)
+  auth.login    → AuthController (success, failed)
+  settings.*    → EinstellungenController (update)
+```
+
+### DSGVO-Anonymisierung
+
+```
+Wenn Kunde gelöscht wird (CustomerService::delete):
+  → Suche alle audit_logs WHERE subject_type='Customer' AND subject_id=$id
+  → UPDATE: subject_label = „Gelöschter Kunde #$id"
+  → UPDATE: old_values / new_values: name/email-Felder anonymisieren
+  → audit_logs bleiben erhalten (für Buchungsnachvollziehbarkeit)
+```
+
+### Retention-Job
+
+```
+Monatlicher deferred_task:
+  DELETE FROM audit_logs WHERE created_at < NOW() - INTERVAL 24 MONTH
+  → Kein vollständiges Truncate; nur Zeilen älter als 2 Jahre
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Gezieltes Logging (kein Auto-Observer) | Verhindert Log-Spam durch interne Berechnungen; nur geschäftsrelevante Änderungen |
+| Append-only (kein Delete durch Admin) | Audit-Logs verlieren ihren Wert wenn sie gelöscht werden können |
+| JSON-Diff in Detail-Ansicht | Admin sieht auf einen Blick was sich geändert hat; kein Vergleich-Tool nötig |
+| Retention 24 Monate | Ausreichend für Steuerprüfung (6-10 Jahre für Buchungen via Rechnungen abgedeckt) |
+
+### Neue Controller / Services
+
+```
+Admin\AuditLogController     ← index (gefilterte Liste + Export)
+AuditLogger                 ← log($action, $subject, $old, $new)
+AuditRetentionJob           ← via deferred_tasks, monatlich
+```
 
 ## QA Test Results
 _To be added by /qa_

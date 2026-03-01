@@ -49,7 +49,110 @@ Studentische Organisationen und Veranstalter können Getränke plus Leihgeräte 
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/checkout/event                          ← Event-Checkout-Pfad
+│
+├── Schritt 1: Veranstaltungsdetails
+│   ├── Veranstaltungsname (Pflicht)
+│   ├── Lieferadresse / Abholung
+│   ├── Lieferdatum + Uhrzeit (Datetimepicker)
+│   └── Rückgabedatum + Uhrzeit (Datetimepicker)
+│
+├── Schritt 2: Getränke-Auswahl
+│   └── → normaler Produktkatalog mit Warenkorb
+│
+└── Schritt 3: Leihgeräte
+    ├── Verfügbare Leihgeräte für gewählten Zeitraum
+    │   ├── Bild, Name, Beschreibung
+    │   ├── Tagespreis, Kaution
+    │   ├── Verfügbarkeitsanzeige (X von N verfügbar)
+    │   └── Menge wählen → [Hinzufügen]
+    └── Zusammenfassung: Leihgeräte + Kaution gesamt
+
+/admin/leihgeraete/                      ← Festinventar-Verwaltung
+├── index       ← Leihgeräte-Liste (Name, Anzahl, Tagespreis)
+└── {id}/       ← Detail/Bearbeiten
+    ├── Stammdaten (Name, Beschreibung, Anzahl, Preise)
+    └── Belegungskalender — welche Tage sind gebucht?
+
+/admin/bestellungen/event/               ← Event-Bestellungen-Übersicht
+└── Kalenderansicht aller Event-Bestellungen (Farbe nach Status)
+```
+
+### Datenmodell
+
+```
+rental_items  [Festinventar / Leihgeräte]
+├── id, name, description
+├── total_quantity      ← wie viele Stücke vorhanden
+├── price_per_day_milli, deposit_milli
+├── active, company_id
+
+rental_bookings  [Buchungen eines Leihgeräts]
+├── id
+├── order_id    → orders
+├── rental_item_id → rental_items
+├── quantity    ← wie viele Stücke gebucht
+├── starts_at, ends_at  (DATETIME)
+├── status  ENUM: reserved | delivered | returned | partially_returned | damaged
+├── condition_notes (nullable)
+└── company_id
+
+orders  [erweitert]
+├── type  ENUM: standard | event   ← neu
+├── event_name (nullable)
+├── event_delivery_at  (DATETIME, nullable)
+└── event_return_at    (DATETIME, nullable)
+
+order_items  [erweitert]
+└── item_type ENUM: product | rental   ← neu (für Leihgeräte)
+```
+
+### Verfügbarkeitsprüfung
+
+```
+Leihgerät X für Zeitraum A..B verfügbar?
+
+  Gebuchte Menge im Zeitraum =
+    SUM(quantity) WHERE starts_at < B AND ends_at > A
+    (Zeitraum-Overlap)
+
+  Verfügbar = total_quantity - gebuchte_menge
+
+→ Prüfung zweimal:
+  1. Beim Anzeigen der Leihgeräte (weiche Prüfung, zeigt verfügbare Menge)
+  2. Beim Checkout-Abschluss (harte Prüfung in DB-Transaktion)
+```
+
+### Admin Kalenderansicht
+
+```
+/admin/bestellungen/event:
+  FullCalendar (JS) zeigt alle rental_bookings als Balken
+  Farbe nach Status: blau = reserved, grün = returned, rot = damaged
+  Kollisionswarnung: wenn ein Leihgerät an einem Tag überbucht wäre
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| `rental_bookings` separiert von `order_items` | Leihgeräte brauchen Start/Ende-Zeiten und Status-Tracking über den Zeitraum |
+| Zweifache Verfügbarkeitsprüfung | Soft-Check für UX, Hard-Check für Datenkonsistenz |
+| `event`-Typ auf `orders` | Event-Bestellungen haben andere Felder; einfacher als separate Tabelle |
+| FullCalendar für Admin-Übersicht | Bewährtes UI-Pattern für Zeitraum-Buchungen; kein Custom-Kalender nötig |
+
+### Neue Controller / Services
+
+```
+Shop\EventCheckoutController         ← index, store (Event-Bestellabschluss)
+Admin\LeihgeraetController           ← CRUD Festinventar
+Admin\EventBestellungController      ← index (Kalenderansicht)
+RentalAvailabilityService           ← checkAvailability(), getAvailableItems()
+```
 
 ## QA Test Results
 _To be added by /qa_

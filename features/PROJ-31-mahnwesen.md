@@ -51,7 +51,103 @@ Automatisches Mahnwesen: Überfällige Rechnungen lösen nach konfigurierbaren F
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/mahnwesen/
+│
+├── index                   ← Kontoübersicht aller Kunden
+│   ├── Tabelle: Kunde | Offener Betrag | Höchste Mahnstufe | Älteste überfällige Rechnung
+│   ├── Filter: nur Kunden mit offenen Posten | Mahnstufe | Überfällig seit X Tagen
+│   └── Klick auf Kunde → Kunden-Mahndetail
+│
+└── kunden/{id}/            ← Mahndetail je Kunde
+    ├── Alle Rechnungen: Nummer | Betrag | Fällig | Mahnstufe | Mahnsperre
+    ├── Je Rechnung:
+    │   ├── [Mahnstufe manuell erhöhen] → sofortige Email
+    │   ├── [Mahnsperre setzen/aufheben] → Notiz Pflichtfeld
+    │   └── Mahnhistorie (wann welche Stufe, Zeitstempel, Benutzer/System)
+    └── Gesamt: Gesamtschuld, Älteste Fälligkeit
+
+/konto/rechnungen           ← Kundenkonto-Ansicht (PROJ-5)
+└── Offene Rechnungen + Gesamtbetrag (readonly, kein Mahnstatus angezeigt)
+```
+
+### Datenmodell
+
+```
+invoices  [erweitert um Mahnfelder]
+├── dunning_level ENUM: none | reminder | dunning_1 | dunning_2 | dunning_3 | collections
+├── dunning_last_sent_at  DATETIME (nullable)
+├── dunning_blocked       BOOL (DEFAULT FALSE)
+└── dunning_block_notes   TEXT (nullable)
+
+invoice_dunning_history  [Mahnprotokoll]
+├── id, invoice_id → invoices
+├── level       ENUM (gleich wie dunning_level)
+├── sent_at     DATETIME
+├── email_sent_to VARCHAR
+├── user_id     → users (nullable)  ← NULL = automatisch vom System
+└── company_id
+
+settings  [erweitert in PROJ-19]
+├── dunning_reminder_days INT  (z.B. 3)
+├── dunning_1_days INT         (z.B. 10 nach Erinnerung)
+├── dunning_2_days INT         (z.B. 7 nach Mahnung 1)
+├── dunning_3_days INT         (z.B. 7 nach Mahnung 2)
+├── dunning_fee_1_milli INT    (z.B. 500 = 5,00 €)
+├── dunning_fee_2_milli INT
+└── dunning_fee_3_milli INT
+```
+
+### Automatischer Mahnlauf (täglich)
+
+```
+DunningService::runDailyCheck() — via deferred_task:
+
+  Für jede finalisierte Rechnung WHERE offener_betrag > 0:
+    1. Mahnsperre aktiv? → Überspringen
+    2. Fälligkeitsdatum berechnen + aktueller dunning_level:
+       Stufen-Logik (Tage nach letzter Aktion):
+         none      + X Tage → reminder  → Email „Zahlungserinnerung"
+         reminder  + Y Tage → dunning_1 → Email „1. Mahnung" + Gebühr 1
+         dunning_1 + Z Tage → dunning_2 → Email „2. Mahnung" + Gebühr 2
+         dunning_2 + W Tage → dunning_3 → Email „3. Mahnung" + Gebühr 3
+    3. dunning_level aktualisieren
+    4. invoice_dunning_history-Eintrag erstellen
+    5. Email via SMTP (nicht-blockierend)
+```
+
+### Mahngebühren-Buchung
+
+```
+Mahngebühr wird als neue Rechnung erstellt (nicht auf bestehende addiert):
+  → Neue invoice mit 1 invoice_item (type='dunning_fee')
+  → Betrag = settings.dunning_fee_X_milli
+  → Verknüpft mit ursprünglicher Rechnung via notes / order_id
+
+Vorteil: Klare Trennung; eigene Rechnungsnummer; Buchung eindeutig
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Tage-basierte Eskalation | Einfach konfigurierbar; nachvollziehbar für Admin |
+| Mahnsperre als explizites Flag | Kulanz-Vereinbarungen müssen dokumentiert sein; nicht stillschweigend |
+| Mahngebühr als eigene Rechnung | Buchhalterisch korrekt; klare Trennung von Ursprungsrechnung |
+| Mahnhistorie in eigener Tabelle | Vollständiges Protokoll; Originalrechnung nicht aufgebläht |
+
+### Neue Controller / Services
+
+```
+Admin\MahnwesenController              ← index (Kontoübersicht), show (Kunden-Detail)
+Admin\MahnstufenController             ← store (manuelle Eskalation)
+Admin\MahnsperreController             ← store/destroy (Sperre setzen/aufheben)
+DunningService                        ← runDailyCheck(), escalate(), sendDunningEmail()
+DunningDailyJob                       ← via deferred_tasks, täglich
+```
 
 ## QA Test Results
 _To be added by /qa_

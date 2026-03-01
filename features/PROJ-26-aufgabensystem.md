@@ -44,7 +44,87 @@ Internes Aufgaben- und To-Do-System für Mitarbeiter und Admin. Aufgaben können
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/aufgaben/
+│
+├── index (Admin-Ansicht: Alle Aufgaben)
+│   ├── Filter: Status (offen/überfällig/erledigt) | Verantwortlicher | Priorität
+│   ├── Tabelle: Titel | Fälligkeit | Priorität | Verantwortlicher | Status
+│   │   └── Überfällige Zeilen rot hervorgehoben
+│   └── [Neue Aufgabe] → Modal
+│
+├── create/edit → Modal / Drawer
+│   ├── Titel (Pflicht), Beschreibung
+│   ├── Fälligkeitsdatum (Datepicker)
+│   ├── Verantwortlicher (Benutzer-Dropdown oder Rolle)
+│   ├── Priorität (niedrig / mittel / hoch — farbcodiert)
+│   └── Wiederholung (keine / täglich / wöchentlich / monatlich / jährlich)
+│
+└── Meine Aufgaben (alle Mitarbeiter — im persönlichen Dashboard-Widget)
+    ├── Nur eigene offene Aufgaben; sortiert nach Fälligkeit
+    └── [Erledigt markieren] → Abschluss-Notiz optional
+
+Dashboard-Widget:
+├── „X offene Aufgaben (Y überfällig)"
+└── Link → /admin/aufgaben/
+```
+
+### Datenmodell
+
+```
+tasks
+├── id, title, description (nullable)
+├── due_date (DATE)
+├── assigned_user_id → users (nullable)
+├── assigned_role    VARCHAR nullable  ← Alternativ: Rolle statt Person
+├── priority  ENUM: low | medium | high
+├── recurrence ENUM: none | daily | weekly | monthly | yearly
+├── status    ENUM: open | done | cancelled
+├── completed_at, completed_by → users (nullable)
+├── completion_notes (nullable)
+├── parent_task_id → tasks (nullable)  ← für Wiederholungsreihen
+└── company_id
+```
+
+### Wiederkehrende Aufgaben
+
+```
+Wenn Aufgabe mit recurrence != 'none' als 'done' markiert:
+  → TaskRecurrenceService::createNext($task):
+      next_due_date = due_date + recurrence_interval
+      Neue Aufgabe mit gleichen Feldern + parent_task_id = $task.id
+      (wird via deferred_task getriggert, nicht synchron)
+```
+
+### Email-Benachrichtigung
+
+```
+Täglicher deferred_task (früh morgens):
+  → DunningNotificationService::sendDueTasks()
+  → Prüft: tasks WHERE due_date = TODAY AND status = 'open'
+  → Sendet Email an assigned_user (oder alle Nutzer der assigned_role)
+  → Kein Throttling nötig: pro Tag max. 1 Email je Aufgabe
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Aufgaben an Rolle oder Person | Wenn Stelle vakant ist, können alle Inhaber der Rolle sehen; flexibler |
+| `parent_task_id` für Wiederholungsreihen | Reihe nachverfolgbar; ursprüngliche Aufgabe ist immer erkennbar |
+| Kein separates Task-Queue-System | Einfacher `deferred_tasks`-Ansatz reicht für regionalen Betrieb |
+| Modal/Drawer für Anlage | Kontextsensitiv; Admin verlässt die Liste nicht |
+
+### Neue Controller / Services
+
+```
+Admin\AufgabeController         ← index, store, update, destroy, complete
+TaskRecurrenceService          ← createNext($task)
+TaskDueNotificationJob         ← via deferred_tasks, täglich
+```
 
 ## QA Test Results
 _To be added by /qa_

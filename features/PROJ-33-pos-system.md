@@ -53,7 +53,121 @@ POS-Kassensystem für den Lagerverkauf / Abholung. Mitarbeiter scannt Barcodes o
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/kasse/{register_id}/                   ← POS-Interface (Vollbild, 1 Seite)
+│
+├── Linke Spalte: Bon-Ansicht
+│   ├── Aktuelle Bon-Positionen
+│   │   └── Produkt | Menge | Preis | [×] entfernen
+│   ├── Kunden-Verknüpfung (optional, Suche)
+│   └── Preis-Zusammenfassung
+│       ├── Zwischensumme netto
+│       ├── Pfand gesamt
+│       ├── MwSt. aufgeschlüsselt
+│       └── Gesamtbetrag brutto
+│
+├── Mittlere Spalte: Produkt-Eingabe
+│   ├── Barcode-Scan-Feld (Auto-Focus, sofort scanbar)
+│   ├── Produktsuche (Fallback für kein Barcode)
+│   ├── Leergut-Rücknahme-Button → Pfand-Auswahl
+│   └── Rabatt-Button (% oder € auf Gesamtbon)
+│
+└── Rechte Spalte: Zahlungsabschluss
+    ├── [Bar] → Nummernpad (Eingabe: Gegeben; Ausgabe: Wechselgeld)
+    ├── [EC-Karte] → Kassierer bestätigt manuell
+    ├── [Rechnung] → Kunden-Zuordnung Pflicht
+    ├── [Bon drucken / PDF]
+    └── [Transaktion abschließen]
+
+/admin/kassen/                          ← Kassen-Auswahl vor POS-Start
+└── Welche Kasse öffnen? + Startbetrag
+```
+
+### Datenmodell
+
+```
+pos_transactions
+├── id, bon_number (aus pos_sequences)
+├── cash_register_id → cash_registers (PROJ-35)
+├── customer_id → customers (nullable)
+├── cashier_user_id → users
+├── status  ENUM: open | completed | cancelled
+├── payment_method ENUM: cash | ec | invoice
+├── total_brutto_milli, paid_amount_milli, change_milli
+└── company_id
+
+pos_transaction_items
+├── id, pos_transaction_id
+├── product_id → products
+├── quantity (INT)
+├── unit_price_brutto_milli  ← Snapshot zum Kassierzeitpunkt
+├── is_deposit_return BOOL   ← Leergut-Rücknahme (Minusbetrag)
+└── company_id
+
+pos_sequences  [Bon-Nummernvergabe]
+├── id (= 1), last_number, prefix (z.B. „BON")
+└── company_id
+```
+
+### Barcode-Scanner-Integration
+
+```
+USB-Barcode-Scanner = Tastatur-Emulation:
+  → Barcode-Feld hat Auto-Focus
+  → Scanner gibt EAN ein + Enter
+  → JS-Event: fetch(POST /kasse/produkt/lookup?ean=...)
+  → Antwort: Produktdaten + Preis
+  → Position wird zum Bon hinzugefügt
+  → Feld wird geleert + Auto-Focus wieder gesetzt
+
+Kein spezieller Scanner-Treiber nötig
+```
+
+### Offline-Strategie (Service Worker)
+
+```
+Browser-Cache (IndexedDB) enthält:
+  - Produktliste (EAN, Name, Preis) — täglich synchronisiert
+  - Pfand-Artikel-Liste
+
+Bei Netzwerkausfall:
+  - Barcode-Lookup greift auf IndexedDB zurück
+  - Transaktion wird lokal gespeichert (pending)
+  - Bei Netzwerk-Wiederherstellung: Background-Sync → Server
+  - Admin sieht pending Transaktionen mit Hinweis
+```
+
+### Kassenbuch-Integration (PROJ-35)
+
+```
+Bei Transaktions-Abschluss:
+  → CashRegisterService::bookTransaction($transaction)
+  → Kassenbuch-Eintrag: Betrag, Zahlungsmittel, Zeitstempel
+  → Kassensaldo wird aktualisiert
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Single-Page POS-Interface | Kassiervorgang muss flüssig sein; kein Seitenreload beim Hinzufügen |
+| Barcode = Tastatureingabe | Alle handelsüblichen USB-Scanner funktionieren ohne Treiber |
+| Preis-Snapshot auf Bon-Position | Preis zum Kaufzeitpunkt; spätere Preisänderungen beeinflussen alte Bons nicht |
+| IndexedDB für Offline | Kein komplettes Offline-System; nur Produktcache; kritische Daten kommen beim Sync |
+| Kein TSE in MVP | TSE-Integration ist komplex und teuer; wird als separates Upgrade (PROJ-33 Phase 2) geplant |
+
+### Neue Controller / Services
+
+```
+Kasse\PosController              ← index (Kassen-Auswahl), show (POS-Interface)
+Kasse\PosTransaktionController   ← store, update (Abschluss), destroy (Storno)
+Kasse\PosProduktLookupController ← show (EAN → Produktdaten)
+Kasse\PosBonController           ← show (PDF-Download)
+PosService                      ← addItem(), closeTransaction(), generateBon()
+```
 
 ## QA Test Results
 _To be added by /qa_

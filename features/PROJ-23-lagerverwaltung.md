@@ -49,7 +49,109 @@ Verwaltung von Lagerorten (Warehouses), Produktbeständen pro Lager und Lagerbew
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/lager/
+│
+├── index                   ← Bestandsübersicht
+│   ├── Filter: Lagerort, Warengruppe, [Nur Unterbestand]
+│   ├── Tabelle: Produkt | Lagerort | Bestand | Mindestbestand | Differenz
+│   │   └── Unterbestand-Zeilen rot hervorgehoben
+│   └── Dashboard-Widget: Anzahl kritischer Bestände (Link hierher)
+│
+├── lagerorte/              ← Lagerort-Verwaltung
+│   ├── index               ← Liste (Name, Anzahl Produkte)
+│   └── create / edit       ← Name, Adresse, Notiz
+│
+├── eingang/create          ← Wareneingang buchen
+│   ├── Produkt wählen (Suche)
+│   ├── Lagerort wählen
+│   ├── Menge, Lieferant (optional), Referenz-Nr., Datum
+│   └── [Buchen] → stock_movement (inbound)
+│
+├── korrektur/create        ← Bestandskorrektur / Inventur
+│   ├── Produkt + Lagerort wählen
+│   ├── Neuer Ist-Bestand eingeben
+│   └── Differenz wird angezeigt → [Korrektur buchen]
+│
+└── bewegungen/             ← Bewegungshistorie
+    ├── Filter: Produkt, Lagerort, Typ, Datum
+    └── Tabelle: Datum | Typ | Produkt | Menge | Referenz | Benutzer
+```
+
+### Datenmodell
+
+```
+warehouses  [Lagerorte]
+├── id, name, address (nullable), notes (nullable)
+└── company_id
+
+product_stock  [Aktueller Bestand je Produkt+Lager]
+├── product_id → products
+├── warehouse_id → warehouses
+├── current_stock  INT (gecacht, atomar aktualisiert)
+├── min_stock      INT nullable
+└── UNIQUE (product_id, warehouse_id)
+
+stock_movements  [Bewegungsprotokoll — append-only]
+├── id
+├── product_id, warehouse_id
+├── type  ENUM: inbound | outbound | adjustment
+├── quantity  INT  (positiv = Eingang, negativ = Ausgang/Korrektur)
+├── reference  VARCHAR nullable  (Lieferschein-Nr., Bestell-ID, etc.)
+├── notes, user_id, created_at
+└── company_id
+```
+
+### Bestandsführungs-Prinzip
+
+```
+current_stock in product_stock ist der „Live-Bestand":
+  → Bei jeder Buchung: product_stock.current_stock += quantity (atomar)
+  → stock_movements ist das unveränderliche Protokoll
+
+KEINE Neuberechnung über SUM(movements) im Betrieb
+→ Schnelle Abfragen; kein Performance-Problem bei großem Protokoll
+
+Inventur-Buchung:
+  Neuer Bestand = 50, alter Bestand = 43
+  → adjustment quantity = +7
+  → current_stock = 43 + 7 = 50 ✓
+```
+
+### Automatischer Warenausgang (aus Lieferung)
+
+```
+Fahrer-PWA (PROJ-16) markiert Stop als delivered:
+  → Event: StopDelivered(order_id, items_delivered)
+  → StockOutboundListener:
+      - Je gelieferter Position: stock_movement (outbound, quantity negativ)
+      - Lagerort: Standard-Lager der Firma (aus Einstellungen)
+      - current_stock wird reduziert
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| `current_stock` als gecachter Wert | Schnelle Bestandsabfragen ohne SUM über Bewegungsprotokoll |
+| Atomare Bestandsänderung | DB-Level Increment/Decrement verhindert Race Conditions bei gleichzeitigen Buchungen |
+| `stock_movements` append-only | Vollständiges Audit-Trail; keine nachträglichen Korrekturen möglich |
+| Negativbestand erlaubt | Reale Lager haben manchmal Negativbestand (Buchungsfehler); System warnt, blockiert nicht |
+
+### Neue Controller / Services
+
+```
+Admin\LagerController           ← index (Bestandsübersicht)
+Admin\LagerortController        ← CRUD Lagerorte
+Admin\WareneingangController    ← store (Eingang buchen)
+Admin\BestandskorrekturController← store (Inventur/Korrektur)
+Admin\LagerbewegungController   ← index (Bewegungshistorie)
+StockService                   ← bookMovement(), adjustStock()
+StockOutboundListener          ← reagiert auf StopDelivered-Event
+```
 
 ## QA Test Results
 _To be added by /qa_

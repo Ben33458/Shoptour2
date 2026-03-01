@@ -44,7 +44,91 @@ Einfaches CMS für statische Seiten im Shop-Frontend: Impressum, AGB, Datenschut
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/cms/
+│
+├── index                   ← Seiten-Liste
+│   ├── Tabelle: Titel | Slug | Status | Zuletzt geändert
+│   └── [Neue Seite]
+│
+└── {id}/edit               ← Seite bearbeiten
+    ├── Titel (Pflicht)
+    ├── Slug (auto-generiert, editierbar; eindeutig)
+    ├── Status (aktiv / inaktiv)
+    ├── SEO: Meta-Titel, Meta-Beschreibung
+    ├── WYSIWYG HTML-Editor (Hauptinhalt)
+    ├── Versionsverlauf (letzte 5 Versionen → [Wiederherstellen])
+    └── [Speichern]
+
+Frontend (Shop):
+└── /seite/{slug}           ← Öffentliche Seite
+    ├── Aktiv   → Seiteninhalte anzeigen
+    └── Inaktiv → 404
+
+Footer (alle Shop-Seiten):
+└── Links: Impressum | AGB | Datenschutz  ← automatisch aus Pflichtseiten
+```
+
+### Datenmodell
+
+```
+cms_pages
+├── id, title, slug (unique), content_html
+├── meta_title, meta_description
+├── is_required  BOOL  ← Impressum/AGB/Datenschutz können nicht gelöscht werden
+├── status  ENUM: active | inactive
+└── company_id
+
+cms_page_versions  [letzte 5 Versionen je Seite]
+├── id, page_id → cms_pages
+├── content_html (Snapshot)
+├── created_by → users, created_at
+└── (ältere Versionen werden beim Speichern gelöscht, FIFO)
+
+cms_page_redirects  [Slug-Weiterleitungen]
+├── old_slug (VARCHAR)
+├── new_page_id → cms_pages
+└── created_at
+```
+
+### Slug-Redirect-Logik
+
+```
+Wenn Slug einer Seite geändert wird:
+  1. Alter Slug → cms_page_redirects (old_slug = alt, new_page_id = Seite)
+  2. Neue Requests auf /seite/{old_slug} → 301 Redirect auf /seite/{new_slug}
+  3. Prüfung auf Redirect-Loop: neuer Slug ≠ alter Slug eines bestehenden Redirects
+```
+
+### WYSIWYG-Editor
+
+```
+Admin-Frontend nutzt TipTap (ProseMirror-basiert):
+  - Im Browser; kein Server-Rendering nötig
+  - Exportiert sauberes HTML
+  - Kein Inline-JS im generierten HTML → XSS-sicher
+  - Inline-Bild-Upload → Laravel Storage; img-src aus Storage-URL
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Eigenes CMS (kein WordPress-Plugin) | Shop-integriert; keine separate Wartung; Kunden-Context verfügbar |
+| Versionierung (5 Versionen) | Undo ohne git; verhindert versehentlichen Inhaltsverlust |
+| Pflicht-Seiten (is_required) | Impressum und AGB müssen immer erreichbar sein (rechtliche Anforderung) |
+| 301-Redirect bei Slug-Änderung | SEO-freundlich; bestehende Links bleiben gültig |
+
+### Neue Controller / Services
+
+```
+Admin\CmsSeiteController     ← index, create, store, edit, update, destroy
+Shop\CmsSeiteController      ← show (öffentlich: /seite/{slug})
+CmsRedirectMiddleware        ← prüft cms_page_redirects vor 404
+```
 
 ## QA Test Results
 _To be added by /qa_

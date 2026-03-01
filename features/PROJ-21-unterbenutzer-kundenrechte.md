@@ -53,7 +53,92 @@ Bürokunden (z.B. Unternehmen mit mehreren Bestellern) können Unterbenutzer anl
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/konto/unterbenutzer                     ← Hauptkunde verwaltet Unterbenutzer
+│
+├── Unterbenutzer-Liste
+│   ├── Name, Email, Rechte-Übersicht, Status (aktiv/inaktiv)
+│   └── [Bearbeiten] [Deaktivieren/Reaktivieren]
+│
+├── [Unterbenutzer einladen] → Modal
+│   ├── Name, Email
+│   ├── Rechte-Matrix (Checkboxen je Berechtigung)
+│   └── [Einladung senden]
+│
+└── Berechtigungs-Editor (je Unterbenutzer)
+    ├── Bestellen (immer aktiv, nicht abwählbar)
+    ├── Bestellhistorie (eigene / alle Firmenbestellungen)
+    ├── Rechnungen einsehen
+    ├── Adressen verwalten
+    ├── Stammsortiment bearbeiten
+    └── Unterbenutzer verwalten
+
+/admin/kunden/{id}/unterbenutzer         ← Admin-Tab in Kundenverwaltung
+└── Gleiche Liste; Admin kann deaktivieren, Rechte sehen
+```
+
+### Datenmodell
+
+```
+sub_users  [Unterbenutzer-Verknüpfung]
+├── id
+├── user_id            → users (der Unterbenutzer-Account)
+├── parent_customer_id → customers (der Hauptkunde)
+├── permissions        JSON  {orders, invoices, addresses, assortment, sub_users}
+├── active             BOOL
+└── company_id
+
+users  [Standard-User-Tabelle, erweitert um Rolle]
+└── role ENUM: ... | sub_user
+
+orders  [erweitert]
+└── placed_by_user_id → users (nullable)  ← wer hat bestellt?
+
+sub_user_invitations  [Einladungs-Token]
+├── email, parent_customer_id, permissions JSON
+├── token (signed URL, hashed), expires_at
+└── used_at (nullable)
+```
+
+### Berechtigungs-Middleware
+
+```
+SubUserPermission prüft je Route:
+
+  Route                         → Benötigte Permission
+  POST /warenkorb/*             → orders (immer erlaubt)
+  GET  /konto/rechnungen        → invoices
+  POST /konto/adressen          → addresses
+  /konto/stammsortiment         → assortment
+  /konto/unterbenutzer          → sub_users
+
+  Fehlend → 403 mit Hinweis „Keine Berechtigung für diesen Bereich"
+
+Header-Kontext wenn Unterbenutzer eingeloggt:
+  „Müller GmbH (als Max Muster)" — klar erkennbar, für wen gehandelt wird
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| Eigene `sub_users`-Tabelle | Unterbenutzer-Rechte sind per Eltern-Kunde spezifisch; keine systemweiten Rollen |
+| `permissions` als JSON | 6 Berechtigungen flexibel erweiterbar ohne Schema-Migration |
+| Einladung per signed URL (48h) | Kein temporäres Passwort; Nutzer setzt eigenes Passwort; sicher |
+| `placed_by_user_id` auf Bestellungen | Transparenz: Hauptkunde sieht, wer bestellt hat |
+| Max. 1 Unterbenutzer-Ebene | Verhindert komplexe Hierarchien; Büro-Use-Case braucht keine Sub-Sub-User |
+
+### Neue Controller / Services
+
+```
+Shop\UnterbenutzerverwaltungController  ← index, invite, update (Rechte), toggleActive
+Admin\KundeSubUserController            ← index (readonly), toggleActive
+SubUserPermission (Middleware)          ← prüft Berechtigungen je Route
+SubUserInvitationService               ← generateToken(), sendInvitation(), acceptInvitation()
+```
 
 ## QA Test Results
 _To be added by /qa_

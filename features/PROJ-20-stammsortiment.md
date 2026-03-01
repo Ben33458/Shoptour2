@@ -49,7 +49,88 @@ Jeder Kunde hat ein persönliches Stammsortiment: eine Liste der regelmäßig be
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/konto/stammsortiment                    ← Kunden-Frontend
+│
+├── Kopfbereich
+│   ├── Überschrift + Produktanzahl
+│   └── [Fehlende Mengen in Warenkorb] — primärer CTA (disabled wenn keine Fehlmengen)
+│
+├── Produkt-Suche                        ← Produkt zum Stammsortiment hinzufügen
+│   └── Autocomplete-Suche → [Hinzufügen]
+│
+└── Stammsortiment-Tabelle
+    ├── Spalten: Bild | Name/Artikelnr. | Mindestbestand | Aktueller Bestand | Fehlmenge | Notiz | Aktionen
+    ├── Inline-Bearbeitung (Alpine.js): Mindestbestand + Aktueller Bestand direkt editierbar
+    ├── Notiz-Feld: Klick → Textarea öffnet sich inline
+    ├── Fehlmenge: farbig hervorgehoben wenn > 0 (rot)
+    └── [Entfernen]-Button pro Zeile
+
+/admin/kunden/{id}/stammsortiment        ← Admin-Ansicht (Tab in Kundenverwaltung)
+└── Gleiche Tabelle wie Kunden-Frontend, aber im Admin-Kontext
+    └── Admin kann für den Kunden alles bearbeiten
+```
+
+### Datenmodell
+
+```
+customer_assortment_items  [Stammsortiment-Einträge]
+├── id
+├── customer_id → customers
+├── product_id  → products
+├── min_stock   (INT, Standard: 0)      ← Soll-Bestand
+├── current_stock (INT, Standard: 0)    ← Ist-Bestand (manuell gepflegt)
+├── notes       (VARCHAR 500, nullable)
+├── UNIQUE (customer_id, product_id)
+└── company_id
+
+Fehlmenge = min_stock - current_stock   ← berechnet, nicht gespeichert
+```
+
+### Schnellbestellung-Ablauf
+
+```
+Kunde klickt [Fehlende Mengen in Warenkorb]:
+  1. Server berechnet: alle Einträge wo current_stock < min_stock
+  2. Fehlmenge = min_stock - current_stock je Produkt
+  3. Deaktivierte Produkte werden übersprungen
+  4. CartService::addBulk([{product_id, qty}]) → befüllt Warenkorb
+  5. Weiterleitung zu /warenkorb mit Erfolgs-Toast
+
+→ Keine clientseitige Berechnung (kein Manipulation-Risiko)
+```
+
+### Automatischer Bestand-Update nach Lieferung
+
+```
+Fahrer-PWA (PROJ-16) markiert Stop als delivered:
+  → Event: StopDelivered(order_id, delivered_items)
+  → AssortmentStockUpdateListener:
+      - Prüft: Hat Kunde Stammsortiment-Eintrag für dieses Produkt?
+      - Ja → current_stock += gelieferte Menge
+      - Nein → nichts tun
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| `current_stock` als manuell gepflegter Wert | Kunden kennen ihren tatsächlichen Verbrauch; automatische Berechnung wäre zu ungenau |
+| Inline-Bearbeitung (kein Modal) | Schnelle Massenbearbeitung mehrerer Produkte ohne ständiges Öffnen von Dialogen |
+| Schnellbestellung serverseitig | Verhindert clientseitige Manipulation der Mengen und Preise |
+| Event-basierter Bestandsupdate | Entkopplung von Fahrer-PWA und Stammsortiment; kein direkter Aufruf nötig |
+
+### Neue Controller / Services
+
+```
+Shop\StammsortimentController      ← index, store, update, destroy, quickOrder
+Admin\KundeStammsortimentController← index (delegiert an gleichen Service)
+AssortmentService                  ← addProduct(), removeProduct(), quickOrder()
+AssortmentStockUpdateListener      ← Lauscht auf StopDelivered-Event
+```
 
 ## QA Test Results
 _To be added by /qa_

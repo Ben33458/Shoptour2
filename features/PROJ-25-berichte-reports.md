@@ -47,7 +47,81 @@ Auswertungs- und Berichts-Modul für Admin und Management. Bietet vordefinierte 
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/berichte/
+│
+├── index                   ← Bericht-Auswahl
+│   └── Karten: Umsatz | Marge | Pfand | Tour-KPIs | Zahlungseingang
+│
+└── {typ}/                  ← Bericht erstellen
+    ├── Parameter-Panel
+    │   ├── Zeitraum (Schnellauswahl: Diese Woche / Monat / Jahr + benutzerdefiniert)
+    │   ├── Weitere Filter je Berichtstyp (Kundengruppe, Warengruppe, Fahrer...)
+    │   └── [Bericht erstellen]
+    │
+    ├── Ergebnis-Tabelle
+    │   ├── Zusammenfassung (Gesamtwerte oben)
+    │   └── Detailtabelle (sortierbar)
+    │
+    └── Export-Leiste
+        └── [CSV herunterladen]
+```
+
+### Bericht-Typen und ihre Datenbasis
+
+```
+Umsatzbericht:
+  Datenbasis: invoices (finalized) + invoice_items
+  Gruppierung: Monat / Kundengruppe / Warengruppe / Top-10-Produkte
+
+Margenbericht:
+  Datenbasis: invoice_items.unit_price_net_milli vs. invoice_items.cost_milli
+  Rohertrag = Σ(unit_price × qty) - Σ(cost × qty)
+  Produkte ohne cost_milli → separat ausgewiesen als „EK fehlt"
+
+Pfandbericht:
+  Ausgegeben: invoice_items (type=deposit)
+  Zurückgenommen: order_adjustments (type=pfand_return) aus Fulfillment
+  Saldo = Ausgegeben - Zurückgenommen
+
+Tour-KPI-Bericht:
+  Datenbasis: driver_tours + driver_tour_stops
+  KPIs: Stops total / delivered / failed / skipped + ∅ Umsatz/Stop
+
+Zahlungseingang-Bericht:
+  Datenbasis: invoices + invoice_payments
+  Aufschlüsselung: offen / bezahlt / überfällig / Zahlungsmittel-Mix
+```
+
+### Große Berichte (>6 Monate)
+
+```
+Zeitraum > 6 Monate → Warnung anzeigen:
+  Option A: Trotzdem sofort berechnen (kann lange dauern)
+  Option B: Als Hintergrundprozess → deferred_task
+             → Email mit Download-Link wenn fertig
+             → CSV wird im Storage gespeichert (24h Gültigkeit)
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| On-Demand-Berechnung (keine Aggregate-Tabellen) | Einfachere Implementierung; Datenmenge für regionalen Betrieb handhabbar |
+| Kein Live-Dashboard | Verhindert Timeout-Probleme auf Shared-Hosting; Berichte sind für Entscheidungen, nicht Echtzeit |
+| CSV mit UTF-8-BOM | Excel öffnet UTF-8-CSVs mit BOM korrekt ohne Umlaut-Probleme |
+| `ReportService` als zentraler Service | Einheitliche Schnittstelle; leicht testbar; wiederverwendbar für automatische Berichte (PROJ-34) |
+
+### Neue Controller / Services
+
+```
+Admin\BerichtController        ← index (Übersicht), show (Formular), generate (Ergebnis)
+ReportService                 ← generateUmsatz(), generateMarge(), generatePfand(), generateTourKpi(), generateZahlungseingang()
+ReportCsvExporter             ← toCsv($result) mit UTF-8-BOM
+```
 
 ## QA Test Results
 _To be added by /qa_

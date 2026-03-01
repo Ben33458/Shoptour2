@@ -45,7 +45,97 @@ Manche Lieferanten/Hersteller verlangen regelmäßige Umsatzmeldungen (z.B. mona
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/umsatzmeldungen/
+│
+├── index                   ← Versendete Meldungen + Protokoll
+│   ├── Filter: Lieferant | Status | Zeitraum
+│   ├── Tabelle: Lieferant | Zeitraum | Versandtag | Status | Empfänger
+│   └── Je Zeile: [CSV herunterladen] [Erneut senden]
+│
+└── manuell/                ← Manuelle Meldung erstellen
+    ├── Lieferant wählen
+    ├── Zeitraum (Von / Bis)
+    └── [CSV herunterladen] (kein Email-Versand)
+
+Lieferanten-Stammdaten (PROJ-11) — Erweiterung:
+└── Tab „Umsatzmeldung"
+    ├── Aktiv / Inaktiv
+    ├── Rhythmus (monatlich / quartalsweise / jährlich)
+    ├── Empfänger-Email(s) (kommasepariert)
+    └── Berichtsbeginn (Datum)
+```
+
+### Datenmodell
+
+```
+supplier_sales_reports  [Versendete Meldungen]
+├── id
+├── supplier_id → suppliers
+├── period_start, period_end  (DATE)
+├── status  ENUM: pending | sent | failed
+├── sent_at (nullable), recipient_emails JSON
+├── csv_path (nullable)  ← gespeichert im Storage
+└── company_id
+
+suppliers  [erweitert in PROJ-11]
+├── sales_report_active    BOOL (DEFAULT FALSE)
+├── sales_report_frequency ENUM: monthly | quarterly | yearly (nullable)
+├── sales_report_emails    JSON  ← [„einkauf@lieferant.de"]
+└── sales_report_start_date DATE (nullable)
+```
+
+### CSV-Inhalt
+
+```
+Spalten: EAN | Artikelnummer | Produktname | Menge | Einheit | Nettopreis je Stück | Nettoumsatz gesamt
+
+Datenbasis:
+  invoice_items
+  JOIN products (für EAN, Artikelnummer)
+  JOIN invoices (Zeitraum-Filter: invoice_date BETWEEN period_start AND period_end)
+  JOIN order_items (für Lieferanten-Zuordnung via supplier_products)
+  WHERE invoice.status = 'finalized'
+    AND primary_supplier_id = $supplier_id
+
+Gruppierung: per product_id → Summe Menge + Summe Umsatz
+```
+
+### Automatischer Versand
+
+```
+Erster Tag des Monats/Quartals/Jahres:
+  UmsatzmeldungJob (via deferred_tasks):
+    1. Prüfe: welche Lieferanten haben sales_report_active=true
+               und period_end = gestern?
+    2. Je Lieferant:
+       a. ReportService::generateSupplierSalesReport() → CSV
+       b. CSV in Storage speichern
+       c. Email versenden (CSV als Anhang)
+       d. supplier_sales_reports-Eintrag: status=sent/failed
+    3. Bei Fehler: status=failed; Admin sieht Hinweis in Liste
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| CSV-Anhang (kein Portal) | Lieferanten-Einkauf arbeitet mit Excel; kein separates Login nötig |
+| Primär-Lieferant für Produktzuordnung | Ein Produkt hat immer einen primären Lieferanten; eindeutige Zuordnung |
+| Manueller CSV-Download zusätzlich | Admin kann Meldungen auch ohne automatischen Versand nutzen |
+| `supplier_sales_reports` als Protokoll | Nachvollziehbarkeit wann was gesendet wurde; Resend möglich |
+
+### Neue Controller / Services
+
+```
+Admin\UmsatzmeldungController         ← index, show, resend, manualDownload
+Admin\LieferantUmsatzmeldungController← update (Konfiguration in Lieferantenstamm)
+ReportService                        ← generateSupplierSalesReport($supplierId, $from, $to)
+UmsatzmeldungDispatchJob             ← via deferred_tasks, monatlich/quartalsweise
+```
 
 ## QA Test Results
 _To be added by /qa_

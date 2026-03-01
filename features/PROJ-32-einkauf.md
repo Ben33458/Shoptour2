@@ -46,7 +46,97 @@ Verwaltung von Einkaufsbestellungen (Purchase Orders) bei Lieferanten. Admin ers
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+
+### Komponenten-Struktur (UI-Baum)
+
+```
+/admin/einkauf/
+│
+├── index                   ← PurchaseOrder-Liste
+│   ├── Filter: Status | Lieferant | Datum
+│   ├── Sortiert nach erwartetem Lieferdatum (überfällig oben)
+│   ├── Tabelle: PO-Nummer | Lieferant | Bestelldatum | Erw. Lieferung | Betrag | Status
+│   └── [Bestellvorschläge] [Neue Bestellung]
+│
+├── bestellvorschlaege/     ← Automatische Empfehlungen
+│   ├── Tabelle: Produkt | Lagerort | Bestand | Mindest | Fehlmenge | Zugeordneter Lieferant
+│   ├── Checkboxen zum Auswählen
+│   └── [Ausgewählte Positionen als Bestellung anlegen]
+│
+└── {id}/                   ← PO-Detail
+    ├── Kopfdaten: Lieferant, Bestelldatum, Erw. Lieferdatum, PO-Nummer, Notiz
+    ├── Positionen-Tabelle: Produkt | Bestellt | Geliefert | EK-Preis | Gesamt
+    ├── Aktionsleiste (je nach Status):
+    │   ├── [Als PDF herunterladen]
+    │   ├── [Per Email an Lieferant senden]
+    │   ├── [Wareneingang buchen] → Modal
+    │   └── [Stornieren] (nur bei draft/ordered ohne Eingang)
+    └── Wareneingang-Modal
+        ├── Je Position: „Gelieferte Menge" eingeben
+        ├── Lagerort wählen
+        └── [Eingang buchen] → stock_movements + status update
+```
+
+### Datenmodell
+
+```
+purchase_orders
+├── id, po_number (z.B. „EK-2024-0001")
+├── supplier_id → suppliers
+├── order_date, expected_delivery_date
+├── status ENUM: draft | ordered | partially_received | received | cancelled
+├── notes (nullable)
+└── company_id
+
+purchase_order_items
+├── id, purchase_order_id → purchase_orders
+├── product_id → products
+├── quantity_ordered, quantity_received (DEFAULT 0)
+├── unit_cost_milli  ← vereinbarter EK-Preis
+└── notes (nullable)
+
+po_sequences  [Race-Condition-freie PO-Nummernvergabe]
+├── id (= 1), last_number INT, prefix VARCHAR (z.B. „EK")
+└── company_id
+```
+
+### Status-Übergänge
+
+```
+draft     → ordered         (Bestellung abgeschickt per Email oder manuell)
+ordered   → partially_received (Erstes Wareneingang-Booking, nicht alles geliefert)
+ordered/partially_received → received (alle qty_received >= qty_ordered)
+ordered   → cancelled       (keine Ware eingegangen)
+```
+
+### Bestellvorschläge
+
+```
+BestellvorschlagService::getProposals():
+  1. product_stock WHERE current_stock < min_stock
+  2. Je Produkt: primären Lieferanten aus supplier_products ermitteln
+  3. Vorschlagsmenge = min_stock - current_stock
+  4. Nach Lieferant gruppiert anzeigen (damit eine PO je Lieferant möglich)
+```
+
+### Tech-Entscheidungen
+
+| Entscheidung | Begründung |
+|---|---|
+| `quantity_received` direkt auf Items | Kein separates Wareneingang-Tabelle nötig; Status klar berechenbar |
+| Bestellvorschläge aus Lagerverwaltung (PROJ-23) | Datenquelle ist product_stock.min_stock; kein Doppel-Tracking |
+| `po_sequences` analog zu `invoice_sequences` | Gleiche Race-Condition-freie Nummernvergabe wie bei Rechnungen |
+| PDF + Email optional (kein Muss beim Erstellen) | Manche Lieferanten kommunizieren per Telefon; PDF on-demand |
+
+### Neue Controller / Services
+
+```
+Admin\EinkaufController              ← index, create, store, show, update (Status), destroy
+Admin\EinkaufWareneingangController  ← store (Eingang buchen)
+Admin\BestellvorschlagController     ← index
+EinkaufService                      ← generatePdf(), sendEmail(), bookReceipt()
+BestellvorschlagService             ← getProposals()
+```
 
 ## QA Test Results
 _To be added by /qa_
