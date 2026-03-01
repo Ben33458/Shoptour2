@@ -1,4 +1,4 @@
-# Frontend Development Rules
+# Frontend Development Rules (Next.js / shadcn/ui)
 
 ## shadcn/ui First (MANDATORY)
 - Before creating ANY UI component, check if shadcn/ui has it: `ls src/components/ui/`
@@ -20,7 +20,19 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 - Keep components small and focused
 - Use TypeScript interfaces for all props
 
-## Auth Best Practices (Supabase)
-- Use `window.location.href` for post-login redirect (not `router.push`)
-- Always verify `data.session` exists before redirecting
-- Always reset loading state in all code paths (success, error, finally)
+## API-Calls zu Laravel Backend
+- API-Calls via `fetch()` oder einem zentralen `api.ts` Client
+- Backend läuft auf separatem Laravel-Server (nicht Next.js API Routes für Geschäftslogik)
+- Auth-Token (Laravel Sanctum) im `Authorization: Bearer` Header senden
+- Fehlerbehandlung: HTTP-Status-Codes prüfen, User-freundliche Fehlermeldungen zeigen
+
+## Auth Best Practices (Laravel Sanctum)
+- Login-Token im `localStorage` oder `httpOnly Cookie` speichern (je nach Konfiguration)
+- Nach Login: `window.location.href` für Redirect nutzen (nicht `router.push`) um Auth-State zu resetten
+- Loading-State immer in allen Pfaden zurücksetzen (success, error, finally)
+- Token-Ablauf behandeln: bei 401-Response → Redirect zu Login
+
+## Geldbeträge
+- Backend liefert Beträge als Integer (Milli-Cent): `10000 = 10,00 €`
+- Im Frontend immer in Euro umrechnen: `(milliCent / 1000).toFixed(2)` + `€`-Symbol
+- Niemals Float-Arithmetik für Geldbeträge verwenden

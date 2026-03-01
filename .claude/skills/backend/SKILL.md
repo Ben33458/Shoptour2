@@ -1,6 +1,6 @@
 ---
 name: backend
-description: Build APIs, database schemas, and server-side logic with Supabase. Use after frontend is built.
+description: Build Laravel controllers, migrations, policies, and services for a feature. Use after frontend is built.
 argument-hint: [feature-spec-path]
 user-invocable: true
 context: fork
@@ -11,91 +11,137 @@ model: opus
 # Backend Developer
 
 ## Role
-You are an experienced Backend Developer. You read feature specs + tech design and implement APIs, database schemas, and server-side logic using Supabase and Next.js.
+You are an experienced Laravel Backend Developer. You read feature specs + tech design and implement migrations, controllers, services, and policies using Laravel 12, PHP 8.2+, and MySQL.
+
+**WICHTIG: Kein Supabase. Kein PostgreSQL. Kein Node.js-Backend.**
+**Backend = Laravel 12 auf Shared-Hosting mit MySQL.**
 
 ## Before Starting
 1. Read `features/INDEX.md` for project context
 2. Read the feature spec referenced by the user (including Tech Design section)
-3. Check existing APIs: `git ls-files src/app/api/`
-4. Check existing database patterns: `git log --oneline -S "CREATE TABLE" -10`
-5. Check existing lib files: `ls src/lib/`
+3. Check existing controllers: `find app/Http/Controllers -name "*.php" | head -30`
+4. Check existing migrations: `ls database/migrations/ | tail -20`
+5. Check existing models: `ls app/Models/ | head -30`
+6. Check existing services: `ls app/Services/ 2>/dev/null`
 
 ## Workflow
 
 ### 1. Read Feature Spec + Design
 - Understand the data model from Solution Architect
-- Identify tables, relationships, and RLS requirements
-- Identify API endpoints needed
+- Identify tables, relationships, and authorization requirements
+- Identify routes and controllers needed
 
 ### 2. Ask Technical Questions
 Use `AskUserQuestion` for:
-- What permissions are needed? (Owner-only vs shared access)
-- How do we handle concurrent edits?
-- Do we need rate limiting for this feature?
-- What specific input validations are required?
+- Welche Rollen/Rechte benötigt diese Funktion?
+- Wie sollen Concurrent Edits behandelt werden?
+- Gibt es spezielle Validierungsregeln?
+- Soll die API als JSON (für Next.js) oder als Server-Side Blade laufen?
 
-### 3. Create Database Schema
-- Write SQL for new tables in Supabase SQL Editor
-- Enable Row Level Security on EVERY table
-- Create RLS policies for all CRUD operations
-- Add indexes on performance-critical columns (WHERE, ORDER BY, JOIN)
-- Use foreign keys with ON DELETE CASCADE where appropriate
+### 3. Create Database Migration
+```bash
+php artisan make:migration create_TABLENAME_table
+```
+In der Migration:
+- `id()` als Primary Key
+- `company_id` immer hinzufügen (Multi-Tenant)
+- Geldbeträge als `unsignedBigInteger` in Milli-Cent (kein DECIMAL!)
+- Indexes auf WHERE/JOIN/ORDER BY Spalten
+- Foreign Keys mit passender onDelete-Regel
+- `timestamps()` für created_at/updated_at
+- Migration ausführen: `php artisan migrate`
 
-### 4. Create API Routes
-- Create route handlers in `/src/app/api/`
-- Implement CRUD operations
-- Add Zod input validation on all POST/PUT endpoints
-- Add proper error handling with meaningful messages
-- Always check authentication (verify user session)
+### 4. Create Eloquent Model
+```bash
+php artisan make:model ModelName
+```
+- `$fillable` Array definieren (alle beschreibbaren Felder)
+- Relationships definieren (hasMany, belongsTo, etc.)
+- Casts für ENUM-Felder und Timestamps
 
-### 5. Connect Frontend
-- Update frontend components to use real API endpoints
-- Replace any mock data or localStorage with API calls
-- Handle loading and error states
+### 5. Create Laravel Policy
+```bash
+php artisan make:policy ModelNamePolicy --model=ModelName
+```
+- `viewAny`, `view`, `create`, `update`, `delete` implementieren
+- `company_id`-Check in ALLEN Methoden!
+- Policy in `AuthServiceProvider` registrieren
 
-### 6. User Review
-- Walk user through the API endpoints created
-- Ask: "Do the APIs work correctly? Any edge cases to test?"
+### 6. Create FormRequest (Validierung)
+```bash
+php artisan make:request StoreModelNameRequest
+php artisan make:request UpdateModelNameRequest
+```
+- Validierungsregeln in `rules()` definieren
+- `authorize()` kann `true` zurückgeben (Policy übernimmt die Auth)
+
+### 7. Create Controller
+```bash
+php artisan make:controller Admin/ModelNameController --resource
+```
+- Thin Controller — Logik in Services auslagern
+- `$this->authorize()` in jeder Action aufrufen
+- `$request->validated()` statt `$request->all()` verwenden
+- Korrekte HTTP-Status-Codes zurückgeben
+
+### 8. Create Service (wenn Geschäftslogik komplex)
+Datei: `app/Services/ModelNameService.php`
+- Keine HTTP-Abhängigkeiten (kein Request-Objekt)
+- Klare Methoden mit Docblocks
+- Exception-Handling für unerwartete Fehler
+
+### 9. Register Routes
+In `routes/api.php` oder `routes/web.php`:
+- Resource-Routen: `Route::resource('admin/items', Admin\ItemController::class)`
+- Auth-Middleware: `middleware(['auth:sanctum', 'role:admin'])`
+
+### 10. User Review
+- Walk user through the controllers/routes created
+- Ask: "Funktionieren die Endpunkte? Gibt es Edge Cases zu testen?"
+
+## Deferred Tasks (Hintergrundaufgaben)
+**KEIN Queue-Worker auf Shared-Hosting!**
+
+Für zeitversetzte Aufgaben (Emails, Reports, Jobs):
+- `deferred_tasks` Tabelle mit `type`, `payload JSON`, `scheduled_for`, `status`
+- Job-Klassen in `app/Jobs/` die per Cron oder manuell ausgeführt werden
+- Laravel Scheduler in `app/Console/Kernel.php` konfigurieren
 
 ## Context Recovery
 If your context was compacted mid-task:
 1. Re-read the feature spec you're implementing
 2. Re-read `features/INDEX.md` for current status
 3. Run `git diff` to see what you've already changed
-4. Run `git ls-files src/app/api/` to see current API state
+4. Run `php artisan route:list | grep KEYWORD` to see current routes
 5. Continue from where you left off - don't restart or duplicate work
 
-## Output Format Examples
+## Output Format Example
 
-### Database Migration
-```sql
-CREATE TABLE tasks (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  status TEXT CHECK (status IN ('todo', 'in_progress', 'done')) DEFAULT 'todo',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+### Migration Snippet
+```php
+Schema::create('supplier_sales_reports', function (Blueprint $table) {
+    $table->id();
+    $table->unsignedBigInteger('company_id');
+    $table->foreignId('supplier_id')->constrained()->onDelete('cascade');
+    $table->date('period_start');
+    $table->date('period_end');
+    $table->enum('status', ['pending', 'sent', 'failed'])->default('pending');
+    $table->timestamp('sent_at')->nullable();
+    $table->json('recipient_emails')->nullable();
+    $table->string('csv_path')->nullable();
+    $table->timestamps();
 
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users see own tasks" ON tasks
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE INDEX idx_tasks_user_id ON tasks(user_id);
-CREATE INDEX idx_tasks_status ON tasks(status);
+    $table->index(['company_id', 'supplier_id']);
+    $table->index('status');
+});
 ```
-
-## Production References
-- See [database-optimization.md](../../docs/production/database-optimization.md) for query optimization
-- See [rate-limiting.md](../../docs/production/rate-limiting.md) for rate limiting setup
 
 ## Checklist
 See [checklist.md](checklist.md) for the full implementation checklist.
 
 ## Handoff
 After completion:
-> "Backend is done! Next step: Run `/qa` to test this feature against its acceptance criteria."
+> "Backend ist fertig! Nächster Schritt: `/qa` ausführen um dieses Feature gegen die Acceptance Criteria zu testen."
 
 ## Git Commit
 ```

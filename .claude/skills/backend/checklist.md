@@ -1,33 +1,62 @@
-# Backend Implementation Checklist
+# Backend Implementation Checklist (Laravel / MySQL)
 
-## Core Checklist
-- [ ] Checked existing tables/APIs via git before creating new ones
-- [ ] Database tables created in Supabase
-- [ ] Row Level Security enabled on ALL new tables
-- [ ] RLS policies created for SELECT, INSERT, UPDATE, DELETE
-- [ ] Indexes created on performance-critical columns
-- [ ] Foreign keys set with appropriate ON DELETE behavior
-- [ ] All planned API endpoints implemented in `/src/app/api/`
-- [ ] Authentication verified (no access without valid session)
-- [ ] Input validation with Zod on all POST/PUT requests
-- [ ] Meaningful error messages with correct HTTP status codes
-- [ ] No TypeScript errors in API routes
-- [ ] All endpoints tested manually
-- [ ] No hardcoded secrets in source code
-- [ ] Frontend connected to real API endpoints
-- [ ] User has reviewed and approved
+## Vor dem Start
+- [ ] Existierende Controller geprüft (kein Doppelwerk): `find app/Http/Controllers -name "*.php"`
+- [ ] Existierende Migrations geprüft: `ls database/migrations/`
+- [ ] Existierende Models geprüft: `ls app/Models/`
 
-## Verification (run before marking complete)
-- [ ] `npm run build` passes without errors
-- [ ] All acceptance criteria from feature spec addressed in API
-- [ ] All API endpoints return correct status codes (test with curl or browser)
-- [ ] `features/INDEX.md` status updated to "In Progress"
-- [ ] Code committed to git
+## Datenbank
+- [ ] Laravel Migration erstellt
+- [ ] `company_id` auf ALLEN neuen Tabellen vorhanden
+- [ ] Geldbeträge als `unsignedBigInteger` (Milli-Cent, kein DECIMAL)
+- [ ] Indexes auf WHERE/JOIN/ORDER BY Spalten gesetzt
+- [ ] Foreign Keys mit korrekter onDelete-Regel definiert
+- [ ] Migration erfolgreich ausgeführt: `php artisan migrate`
 
-## Performance Checklist
-- [ ] All frequently filtered columns have indexes
-- [ ] No N+1 queries (use Supabase joins instead of loops)
-- [ ] All list queries use `.limit()`
-- [ ] Zod validation on all write endpoints
-- [ ] Slow queries cached where appropriate (optional for MVP)
-- [ ] Rate limiting on public-facing APIs (optional for MVP)
+## Eloquent Model
+- [ ] Model erstellt mit `php artisan make:model`
+- [ ] `$fillable` Array vollständig definiert
+- [ ] Relationships korrekt definiert (hasMany, belongsTo, etc.)
+- [ ] Casts für ENUM und spezielle Felder gesetzt
+
+## Authorization
+- [ ] Laravel Policy erstellt: `php artisan make:policy`
+- [ ] `company_id`-Check in ALLEN Policy-Methoden vorhanden
+- [ ] Policy in `AuthServiceProvider` registriert
+- [ ] `$this->authorize()` in ALLEN Controller-Actions aufgerufen
+
+## Validierung
+- [ ] FormRequest für Store erstellt
+- [ ] FormRequest für Update erstellt
+- [ ] `$request->validated()` wird im Controller verwendet (nicht `$request->all()`)
+
+## Controller & Routes
+- [ ] Controller erstellt mit korrekter Namespace-Struktur
+- [ ] Alle geplanten Routes implementiert
+- [ ] Auth-Middleware auf allen Routes gesetzt
+- [ ] Korrekte HTTP-Status-Codes (200, 201, 422, 403, 404, etc.)
+- [ ] Thin Controller — Geschäftslogik in Services
+
+## Service (falls benötigt)
+- [ ] Service in `app/Services/` erstellt
+- [ ] Keine HTTP-Objekte im Service (nur Business-Logik)
+- [ ] Service per Dependency Injection im Controller injiziert
+
+## Sicherheit
+- [ ] Keine Secrets im Code
+- [ ] CSRF-Schutz aktiv für Web-Routen
+- [ ] Mass-Assignment-Schutz: `$fillable` gesetzt
+- [ ] Raw SQL auf SQL-Injection geprüft (falls verwendet)
+
+## Verifikation
+- [ ] `php artisan test` läuft ohne Fehler
+- [ ] Alle Acceptance Criteria aus Feature-Spec in den Endpunkten abgedeckt
+- [ ] API manuell getestet (Postman, curl oder Browser)
+- [ ] `features/INDEX.md` Status auf "In Progress" gesetzt
+- [ ] Code committed
+
+## Performance
+- [ ] Eager Loading (`with()`) für bekannte Relationships verwendet
+- [ ] Keine N+1-Queries
+- [ ] Listen paginiert: `->paginate(25)`
+- [ ] Langsame Queries gecacht (optional für MVP): `Cache::remember()`
