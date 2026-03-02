@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for f in features/PROJ-*.md)",
+      "Bash(do)",
+      "Bash(if grep -q \"Tech Design\" \"$f\")",
+      "Bash(then)",
+      "Bash(echo \"HAS DESIGN: $f\")",
+      "Bash(else)",
+      "Bash(echo \"NO DESIGN:  $f\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Read(//d/Claude_Code/Getraenkeshop/**)"
+    ]
+  }
+}

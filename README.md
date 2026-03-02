@@ -1,323 +1,59 @@
-# AI Coding Starter Kit
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-> Build production-ready web apps faster with AI-powered Skills handling Requirements, Architecture, Development, QA, and Deployment.
+<p align="center">
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
 
-This template uses [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with modern Skills, Rules, and Sub-Agents to provide a complete AI-powered development workflow.
+## About Laravel
 
-## Quick Start
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
-### 1. Clone & Install
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-```bash
-git clone https://github.com/YOUR_USERNAME/ai-coding-starter-kit.git my-project
-cd my-project
-npm install
-```
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
-### 2. (Optional) Supabase Setup
+## Learning Laravel
 
-If you need a backend:
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
 
-1. Create Supabase Project: [supabase.com](https://supabase.com)
-2. Copy `.env.local.example` to `.env.local`
-3. Add your Supabase credentials
-4. Uncomment the Supabase client in `src/lib/supabase.ts`
+If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
 
-Skip this step if you're building frontend-only (landing pages, portfolios, etc.)
+## Laravel Sponsors
 
-### 3. Start Development
+We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
-```bash
-npm run dev
-```
+### Premium Partners
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+- **[Vehikl](https://vehikl.com)**
+- **[Tighten Co.](https://tighten.co)**
+- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
+- **[64 Robots](https://64robots.com)**
+- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
+- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
+- **[Redberry](https://redberry.international/laravel-development)**
+- **[Active Logic](https://activelogic.com)**
 
-### 4. Initialize Your Project
+## Contributing
 
-Open Claude Code and describe your project. The `/requirements` skill automatically detects that this is a fresh project and enters **Init Mode**:
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
 
-```
-/requirements I want to build a project management tool for small teams
-where users can create projects, assign tasks, and track progress.
-```
+## Code of Conduct
 
-The skill will:
-1. Ask interactive questions to clarify your vision, target users, and MVP scope
-2. Create your **Product Requirements Document** (`docs/PRD.md`)
-3. Break the project into individual features (Single Responsibility)
-4. Create all **feature specs** (`features/PROJ-1.md`, `PROJ-2.md`, etc.)
-5. Update **feature tracking** (`features/INDEX.md`)
-6. Recommend which feature to build first
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
 
-You don't need to put everything in the first prompt - a brief description is enough. The skill asks follow-up questions interactively.
+## Security Vulnerabilities
 
-### 5. Build Features
-
-After project initialization, build features one at a time using skills:
-
-```
-/architecture    Design the tech approach for features/PROJ-1-user-auth.md
-/frontend        Build the UI for features/PROJ-1-user-auth.md
-/backend         Build the API for features/PROJ-1-user-auth.md
-/qa              Test features/PROJ-1-user-auth.md
-/deploy          Deploy to Vercel
-```
-
-Each skill suggests the next step when it finishes. Handoffs are always user-initiated.
-
-To add more features later, run `/requirements` again - it detects the existing PRD and adds a single feature.
-
----
-
-## Available Skills
-
-| Skill | Command | What It Does |
-|-------|---------|-------------|
-| Requirements Engineer | `/requirements` | Creates feature specs with user stories, acceptance criteria, edge cases |
-| Solution Architect | `/architecture` | Designs PM-friendly tech architecture (no code, only high-level design) |
-| Frontend Developer | `/frontend` | Builds UI with React, Tailwind CSS, and shadcn/ui |
-| Backend Developer | `/backend` | Builds APIs, database schemas, RLS policies with Supabase |
-| QA Engineer | `/qa` | Tests features against acceptance criteria + security audit |
-| DevOps | `/deploy` | Deploys to Vercel with production-ready checks |
-| Help | `/help` | Context-aware guide: shows where you are and what to do next |
-
-### How Skills Work
-
-- **Skills** are defined in `.claude/skills/` and auto-discovered by Claude Code
-- **Rules** in `.claude/rules/` are auto-applied based on file context (no manual loading)
-- **Sub-Agents** run heavy tasks (frontend, backend, QA) in isolated contexts for cost efficiency
-- **CLAUDE.md** provides project context automatically at every session start
-
----
-
-## Development Workflow
-
-```
-1. Define    /requirements  -->  Feature spec in features/PROJ-X.md
-2. Design    /architecture  -->  Tech design added to feature spec
-3. Build     /frontend      -->  UI components implemented
-             /backend       -->  APIs + database (if needed)
-4. Test      /qa            -->  Test results added to feature spec
-5. Ship      /deploy        -->  Deployed to Vercel
-```
-
-### Feature Tracking
-
-Features are tracked in `features/INDEX.md`:
-
-| ID | Feature | Status | Spec |
-|----|---------|--------|------|
-| PROJ-1 | User Login | Deployed | [Spec](features/PROJ-1-user-login.md) |
-| PROJ-2 | Dashboard | In Progress | [Spec](features/PROJ-2-dashboard.md) |
-
-Every skill reads this file at start and updates it when done, preventing duplicate work.
-
----
-
-## Tech Stack
-
-| Category | Tool | Why? |
-|----------|------|------|
-| **Framework** | Next.js 16 | React + Server Components + App Router |
-| **Language** | TypeScript | Type safety |
-| **Styling** | Tailwind CSS | Utility-first CSS |
-| **UI Library** | shadcn/ui | Copy-paste, customizable components |
-| **Backend** | Supabase (optional) | PostgreSQL + Auth + Storage + Realtime |
-| **Deployment** | Vercel | Zero-config Next.js hosting |
-| **Validation** | Zod | Runtime type validation |
-
----
-
-## Project Structure
-
-```
-ai-coding-starter-kit/
-+-- CLAUDE.md                        <-- Auto-loaded project context
-+-- .claude/
-|   +-- settings.json                <-- Team permissions (committed)
-|   +-- settings.local.json          <-- Personal overrides (gitignored)
-|   +-- rules/                       <-- Auto-applied coding rules
-|   |   +-- general.md                   Git workflow, feature tracking
-|   |   +-- frontend.md                  shadcn/ui, component standards
-|   |   +-- backend.md                   RLS, validation, queries
-|   |   +-- security.md                  Secrets, headers, auth
-|   +-- skills/                      <-- Invocable workflows (/command)
-|   |   +-- requirements/SKILL.md        /requirements
-|   |   +-- architecture/SKILL.md        /architecture
-|   |   +-- frontend/SKILL.md            /frontend (runs as sub-agent)
-|   |   +-- backend/SKILL.md             /backend (runs as sub-agent)
-|   |   +-- qa/SKILL.md                  /qa (runs as sub-agent)
-|   |   +-- deploy/SKILL.md              /deploy
-|   |   +-- help/SKILL.md                /help
-|   +-- agents/                      <-- Sub-agent configs
-|       +-- frontend-dev.md              Model, tools, limits
-|       +-- backend-dev.md
-|       +-- qa-engineer.md
-+-- features/                        <-- Feature specifications
-|   +-- INDEX.md                         Status tracking
-|   +-- README.md                        Spec format documentation
-+-- docs/
-|   +-- PRD.md                       <-- Product Requirements Document
-|   +-- production/                  <-- Production setup guides
-|       +-- error-tracking.md            Sentry setup (5 min)
-|       +-- security-headers.md          XSS/Clickjacking protection
-|       +-- performance.md               Lighthouse, optimization
-|       +-- database-optimization.md     Indexing, N+1, caching
-|       +-- rate-limiting.md             Upstash Redis
-+-- src/
-|   +-- app/                         <-- Pages (Next.js App Router)
-|   +-- components/
-|   |   +-- ui/                      <-- shadcn/ui components (35+ installed)
-|   +-- hooks/                       <-- Custom React hooks
-|   +-- lib/                         <-- Utilities
-+-- public/                          <-- Static files
-```
-
----
-
-## Getting Started
-
-### 1. Fill Out Your PRD
-
-Define your product vision in `docs/PRD.md`:
-- What are you building and why?
-- Who are the target users?
-- What features are on the roadmap?
-
-### 2. Build Your First Feature
-
-Run `/requirements` with your feature idea. The skill will:
-- Ask interactive questions to clarify requirements
-- Create a feature spec in `features/PROJ-1-name.md`
-- Update `features/INDEX.md` with the new feature
-- Suggest running `/architecture` as the next step
-
-### 3. Add shadcn/ui Components (as needed)
-
-35+ components are pre-installed. Add more as needed:
-```bash
-npx shadcn@latest add [component-name]
-```
-
-### 4. Production Setup (first deployment)
-
-When you're ready to deploy, the `/deploy` skill guides you through:
-- Vercel setup and deployment
-- Error tracking with Sentry
-- Security headers configuration
-- Performance monitoring with Lighthouse
-
-See `docs/production/` for detailed setup guides.
-
----
-
-## How It Works Under the Hood
-
-### Skills (`.claude/skills/`)
-Each skill is a structured workflow that Claude Code discovers automatically. Skills can run inline (in the main conversation) or as forked sub-agents (isolated context window).
-
-| Skill | Execution | Why? |
-|-------|-----------|------|
-| `/requirements` | Inline | Needs live interaction with user |
-| `/architecture` | Inline | Short output, user reviews in real-time |
-| `/frontend` | Sub-agent (forked) | Heavy file editing, lots of output |
-| `/backend` | Sub-agent (forked) | Heavy file editing, SQL, API code |
-| `/qa` | Sub-agent (forked) | Systematic testing, lots of output |
-| `/deploy` | Inline | Deployment needs user oversight |
-| `/help` | Inline | Quick status check and guidance |
-
-### Rules (`.claude/rules/`)
-Coding standards that are auto-applied based on which files Claude is working with. No manual loading needed.
-
-### Sub-Agent Configs (`.claude/agents/`)
-Lightweight configurations that define model, tool access, and turn limits for forked skills.
-
-### CLAUDE.md
-Auto-loaded at every session start. Contains tech stack, conventions, and references to PRD and feature index.
-
----
-
-## Context Engineering
-
-AI agents work best with clean, structured context - not longer prompts. This template is designed around these principles:
-
-### State lives in files, not in memory
-
-Every skill reads `features/INDEX.md` and the relevant feature spec at start. After context compaction or a new session, nothing is lost - the agent simply re-reads the files. Progress tracking, acceptance criteria, and tech designs all live in markdown files, not in the conversation.
-
-### Context is layered
-
-Not everything is loaded at once. Information is layered by relevance:
-
-| Layer | What | When loaded |
-|-------|------|-------------|
-| `CLAUDE.md` | Tech stack, conventions, commands | Every session (auto) |
-| `.claude/rules/` | Coding standards | When editing matching files (auto) |
-| Skill `SKILL.md` | Workflow instructions | When skill is invoked |
-| Feature spec | Requirements, AC, tech design | On demand (skill reads it) |
-| `docs/production/` | Deployment guides | Only when referenced |
-
-### Context is isolated
-
-Heavy implementation skills (`/frontend`, `/backend`, `/qa`) run as **forked sub-agents** with their own context window. Research noise from one skill doesn't pollute another. Each fork starts clean and loads only what it needs.
-
-### Context recovery is built in
-
-All forked skills include a **Context Recovery** section: if the context is compacted mid-task, the agent re-reads the feature spec, checks `git diff` for progress, and continues without restarting or duplicating work.
-
-### Always read, never guess
-
-A global rule (`rules/general.md`) enforces: always read a file before modifying it, never assume contents from memory, verify import paths and API routes by reading. This prevents hallucinated code references - the most common source of AI coding errors.
-
----
-
-## Customization for Your Team
-
-This template is designed as a starting point. Customize it for your team:
-
-1. **Edit CLAUDE.md** - Add your project-specific conventions and build commands
-2. **Edit docs/PRD.md** - Define your product vision and roadmap
-3. **Edit .claude/rules/** - Adjust coding standards for your team
-4. **Edit .claude/skills/** - Modify workflows to match your process
-5. **Edit .claude/settings.json** - Configure team permissions
-
----
-
-## Production Guides
-
-Standalone guides in `docs/production/`:
-
-| Guide | Setup Time | What It Does |
-|-------|-----------|-------------|
-| [Error Tracking](docs/production/error-tracking.md) | 5 min | Sentry integration for automatic error capture |
-| [Security Headers](docs/production/security-headers.md) | 2 min | XSS, Clickjacking, MIME sniffing protection |
-| [Performance](docs/production/performance.md) | 10 min | Lighthouse checks, image optimization, caching |
-| [Database Optimization](docs/production/database-optimization.md) | 15 min | Indexing, N+1 prevention, query optimization |
-| [Rate Limiting](docs/production/rate-limiting.md) | 10 min | Upstash Redis for API abuse prevention |
-
----
-
-## Scripts
-
-```bash
-npm run dev        # Development server (localhost:3000)
-npm run build      # Production build
-npm run start      # Production server
-npm run lint       # ESLint
-```
-
----
-
-## Author
-
-Created by **Alex Sprogis** – AI Product Engineer & Content Creator.
-
-- [YouTube](https://www.youtube.com/@alex.sprogis)
-- [Website](https://alexsprogis.de)
-
----
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
 
 ## License
 
-MIT License - feel free to use for your projects!
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).

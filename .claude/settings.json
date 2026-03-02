@@ -16,7 +16,14 @@
       "Bash(kill:*)",
       "Bash(npx shadcn@latest add:*)",
       "Bash(ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Read(//d/Claude_Code/Getraenkeshop 2>/dev/**)",
+      "Bash(php --version)"
+    ],
+    "additionalDirectories": [
+      "d:\\Claude_Code\\Getraenkeshop\\shop-tours\\database\\migrations",
+      "d:\\Claude_Code\\Getraenkeshop\\shop-tours\\app\\Models",
+      "d:\\Claude_Code\\Getraenkeshop\\shoptour2-temp"
     ]
   }
 }

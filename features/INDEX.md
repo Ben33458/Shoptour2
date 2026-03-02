@@ -12,10 +12,10 @@
 
 | ID | Feature | Status | Spec | Created |
 |----|---------|--------|------|---------|
-| PROJ-1 | Authentifizierung (Email/Passwort + Google OAuth) | In Progress | [PROJ-1-auth.md](PROJ-1-auth.md) | 2026-02-28 |
-| PROJ-2 | Produktkatalog (Browse, Filter, Suche, Gast-Preisgruppe) | In Progress | [PROJ-2-produktkatalog.md](PROJ-2-produktkatalog.md) | 2026-02-28 |
-| PROJ-3 | Warenkorb (Gast + Auth, Session) | In Progress | [PROJ-3-warenkorb.md](PROJ-3-warenkorb.md) | 2026-02-28 |
-| PROJ-4 | Checkout (Heimdienst, Abholung, Bestellbestätigung) | In Progress | [PROJ-4-checkout.md](PROJ-4-checkout.md) | 2026-02-28 |
+| PROJ-1 | Authentifizierung (Email/Passwort + Google OAuth) | In Review | [PROJ-1-auth.md](PROJ-1-auth.md) | 2026-02-28 |
+| PROJ-2 | Produktkatalog (Browse, Filter, Suche, Gast-Preisgruppe) | In Review | [PROJ-2-produktkatalog.md](PROJ-2-produktkatalog.md) | 2026-02-28 |
+| PROJ-3 | Warenkorb (Gast + Auth, Session) | In Review | [PROJ-3-warenkorb.md](PROJ-3-warenkorb.md) | 2026-02-28 |
+| PROJ-4 | Checkout (Heimdienst, Abholung, Bestellbestätigung) | In Review | [PROJ-4-checkout.md](PROJ-4-checkout.md) | 2026-02-28 |
 | PROJ-5 | Kundenkonto (Dashboard, Bestellhistorie, Rechnungen, Adressen) | Planned | [PROJ-5-kundenkonto.md](PROJ-5-kundenkonto.md) | 2026-02-28 |
 | PROJ-6 | Preisfindung (3-stufig: Kunde → Gruppe → Basis) | In Progress | [PROJ-6-preisfindung.md](PROJ-6-preisfindung.md) | 2026-02-28 |
 | PROJ-7 | Pfand-System (Kalkulation, PfandSets, Gebinde) | In Progress | [PROJ-7-pfand-system.md](PROJ-7-pfand-system.md) | 2026-02-28 |

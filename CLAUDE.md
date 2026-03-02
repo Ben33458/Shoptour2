@@ -1,10 +1,10 @@
 # Kolabri Getränkeshop — AI Development Workflow
 
-> AI-powered development workflow using specialized skills for Requirements, Architecture, Frontend, Backend, QA, and Deployment.
+> AI-powered development workflow using specialized skills for Requirements, Architecture, Backend, QA, and Deployment.
 
 ## Tech Stack
 
-### Backend (Laravel)
+### Backend (Laravel) — dieses Repo
 - **Framework:** Laravel 12, PHP 8.2+
 - **Database:** MySQL 8+ (KEIN Supabase, KEIN PostgreSQL)
 - **Auth:** Laravel Sanctum (API) + Session-Auth (Web)
@@ -15,42 +15,26 @@
 - **PDF:** dompdf / barryvdh/laravel-dompdf
 - **Email:** Laravel Mail (SMTP)
 
-### Frontend (Next.js)
-- **Framework:** Next.js 16 (App Router), TypeScript
-- **Styling:** Tailwind CSS + shadcn/ui (copy-paste components)
-- **Validation:** Zod + react-hook-form
-- **State:** React useState / Context API
-- **API-Calls:** fetch() zu Laravel Backend-API
-
 ### Deployment
 - **Backend:** Shared-Hosting bei Internetwerk (PHP 8.2+, MySQL)
-- **Frontend:** Vercel (Next.js)
+
+## Referenz-Projekt
+
+> `d:\Claude_Code\Getraenkeshop\shop-tours\` ist das ALTE Referenz-Projekt.
+> Es wird NICHT verändert — nur als Vorlage/Referenz gelesen.
 
 ## Projektstruktur
 
 ```
-/                          ← Next.js Frontend (dieses Repo)
-  src/
-    app/                   Pages (Next.js App Router)
-    components/
-      ui/                  shadcn/ui components (NEVER recreate these)
-    hooks/                 Custom React hooks
-    lib/                   Utilities (api.ts, utils.ts)
-  features/                Feature specifications (PROJ-X-name.md)
-    INDEX.md               Feature status overview
-  docs/
-    PRD.md                 Product Requirements Document
-    production/            Production guides
-
-d:\Claude_Code\Getraenkeshop\shop-tours\  ← Laravel Backend (separates Verzeichnis!)
+d:\Claude_Code\Getraenkeshop\Shoptour2\   ← Dieses Repo (Laravel Backend NEU)
   app/
     Http/
-      Controllers/         Route-Handler (Admin/, Kasse/, etc.)
+      Controllers/         Route-Handler (Admin/, Shop/, etc.)
       Requests/            FormRequest-Validierung
       Middleware/          Auth, Role, CompanyScope
     Models/                Eloquent-Models
-    Services/              Business-Logik (ReportService, etc.)
-    Jobs/                  Deferred Tasks (kein Queue-Worker nötig)
+    Services/              Business-Logik
+    DTOs/                  Value Objects
   database/
     migrations/            Tabellenstruktur
     seeders/               Testdaten
@@ -59,16 +43,19 @@ d:\Claude_Code\Getraenkeshop\shop-tours\  ← Laravel Backend (separates Verzeic
     api.php                API-Routen
   resources/
     views/                 Blade-Templates (Admin-UI, PDF-Vorlagen)
+  features/                Feature specifications (PROJ-X-name.md)
+    INDEX.md               Feature status overview
+  docs/
+    PRD.md                 Product Requirements Document
 ```
 
 ## Development Workflow
 
 1. `/requirements` - Feature-Spec aus Idee erstellen
 2. `/architecture` - Tech-Architektur entwerfen (PM-freundlich, kein Code)
-3. `/frontend` - UI-Komponenten bauen (shadcn/ui first!)
-4. `/backend` - Laravel Controller, Migration, Service, Policy bauen
-5. `/qa` - Gegen Acceptance Criteria testen + Security Audit
-6. `/deploy` - Laravel auf Shared-Hosting + Next.js auf Vercel
+3. `/backend` - Laravel Controller, Migration, Service, Policy bauen
+4. `/qa` - Gegen Acceptance Criteria testen + Security Audit
+5. `/deploy` - Laravel auf Shared-Hosting deployen
 
 ## Feature Tracking
 
@@ -79,23 +66,14 @@ Alle Features in `features/INDEX.md`. Jede Skill liest es am Anfang und aktualis
 - **Feature IDs:** PROJ-1, PROJ-2, ... (sequenziell)
 - **Commits:** `feat(PROJ-X): description`, `fix(PROJ-X): description`
 - **Single Responsibility:** Eine Feature-Spec pro Datei
-- **shadcn/ui first:** NIEMALS eigene Versionen installierter shadcn-Komponenten bauen
 - **Human-in-the-loop:** Alle Workflows haben Nutzer-Freigabe-Checkpoints
-- **Geldbeträge:** Immer als Integer in Milli-Cent (10000 = 10,00 €)
+- **Geldbeträge:** Immer als Integer in Milli-Cent (1_000_000 = 1,00 €)
 - **Multi-Tenant:** `company_id` auf ALLEN Tabellen vorbereiten
 - **Keine echte Queue:** `deferred_tasks` als DB-basierte Queue (Shared-Hosting!)
+- **Referenz lesen, nicht ändern:** shop-tours nur lesen, nie committen
 
 ## Build & Test Commands
 
-### Frontend (Next.js)
-```bash
-npm run dev        # Dev-Server (localhost:3000)
-npm run build      # Production-Build
-npm run lint       # ESLint
-npm run start      # Production-Server
-```
-
-### Backend (Laravel)
 ```bash
 php artisan serve              # Dev-Server (localhost:8000)
 php artisan migrate            # Migrationen ausführen
