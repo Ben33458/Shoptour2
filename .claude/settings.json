@@ -18,7 +18,12 @@
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Read(//d/Claude_Code/Getraenkeshop 2>/dev/**)",
-      "Bash(php --version)"
+      "Bash(php --version)",
+      "Bash(composer install --no-interaction)",
+      "Bash(php artisan --version)",
+      "Bash(php artisan route:list --compact)",
+      "Bash(php artisan route:list)",
+      "Bash(# Copy all routes, lang files and check for more issues cp d:/Claude_Code/Getraenkeshop/shop-tours/routes/web.php d:/Claude_Code/Getraenkeshop/Shoptour2/routes/web.php cp d:/Claude_Code/Getraenkeshop/shop-tours/routes/api.php d:/Claude_Code/Getraenkeshop/Shoptour2/routes/api.php || true cp d:/Claude_Code/Getraenkeshop/shop-tours/routes/console.php d:/Claude_Code/Getraenkeshop/Shoptour2/routes/console.php || true # Copy lang directory [ -d d:/Claude_Code/Getraenkeshop/shop-tours/lang ] && cp -rf d:/Claude_Code/Getraenkeshop/shop-tours/lang/. d:/Claude_Code/Getraenkeshop/Shoptour2/lang/ # Check routes now cd d:/Claude_Code/Getraenkeshop/Shoptour2 && php artisan route:list 2>&1)"
     ],
     "additionalDirectories": [
       "d:\\Claude_Code\\Getraenkeshop\\shop-tours\\database\\migrations",
