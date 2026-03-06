@@ -17,6 +17,10 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // MODIFY COLUMN is MySQL-only; SQLite (local dev) enforces no types, skip.
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
         DB::statement(
             "ALTER TABLE customer_groups
              MODIFY COLUMN price_adjustment_type
@@ -26,6 +30,9 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
         DB::statement(
             "ALTER TABLE customer_groups
              MODIFY COLUMN price_adjustment_type

@@ -50,12 +50,14 @@ class AdminPfandSetController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:150'],
+            'name'         => ['required', 'string', 'max:150'],
+            'beschreibung' => ['nullable', 'string'],
         ]);
 
         PfandSet::create([
-            'name'   => $request->input('name'),
-            'active' => true,
+            'name'         => $request->input('name'),
+            'beschreibung' => $request->input('beschreibung'),
+            'active'       => true,
         ]);
 
         return back()->with('success', 'Pfandset angelegt.');
@@ -95,6 +97,11 @@ class AdminPfandSetController extends Controller
                 $data['name'] = $request->input('name');
             }
 
+            if ($request->has('beschreibung')) {
+                $request->validate(['beschreibung' => ['nullable', 'string']]);
+                $data['beschreibung'] = $request->input('beschreibung');
+            }
+
             if ($request->has('active')) {
                 $data['active'] = (bool) $request->input('active');
             }
@@ -106,11 +113,15 @@ class AdminPfandSetController extends Controller
             return response()->json(['ok' => true]);
         }
 
-        // Full-form (unused currently, kept for completeness)
-        $request->validate(['name' => ['required', 'string', 'max:150']]);
+        // Full-form (show-page save)
+        $request->validate([
+            'name'         => ['required', 'string', 'max:150'],
+            'beschreibung' => ['nullable', 'string'],
+        ]);
         $pfandSet->update([
-            'name'   => $request->input('name'),
-            'active' => $request->boolean('active'),
+            'name'         => $request->input('name'),
+            'beschreibung' => $request->input('beschreibung'),
+            'active'       => $request->boolean('active'),
         ]);
 
         return back()->with('success', 'Pfandset gespeichert.');

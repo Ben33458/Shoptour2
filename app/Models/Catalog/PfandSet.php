@@ -35,6 +35,7 @@ class PfandSet extends Model
      */
     protected $fillable = [
         'name',
+        'beschreibung',
         'active',
     ];
 
