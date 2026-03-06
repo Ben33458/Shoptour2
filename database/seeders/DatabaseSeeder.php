@@ -24,15 +24,20 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Kolabri Getränke', 'active' => true]
         );
 
-        // Default admin user
-        User::firstOrCreate(
+        // Default admin user — role/first_name not in $fillable, set directly
+        $admin = User::firstOrCreate(
             ['email' => 'admin@kolabri.de'],
             [
-                'name'       => 'Admin',
+                'first_name' => 'Admin',
+                'last_name'  => 'Kolabri',
                 'password'   => Hash::make('admin123'),
-                'role'       => 'admin',
                 'company_id' => $company->id,
+                'active'     => true,
             ]
         );
+        if ($admin->role !== 'admin') {
+            $admin->role = 'admin';
+            $admin->save();
+        }
     }
 }
