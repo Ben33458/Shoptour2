@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Admin\LexofficeVoucher;
 use App\Models\Contact;
 use App\Models\Supplier\Supplier;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -25,8 +27,12 @@ class AdminSupplierController extends Controller
     {
         $company = App::make('current_company');
 
+        $allowedSorts = ['name', 'email', 'phone', 'currency', 'active'];
+        $sort      = in_array($request->input('sort'), $allowedSorts, true) ? $request->input('sort') : 'name';
+        $direction = $request->input('direction') === 'desc' ? 'desc' : 'asc';
+
         $query = Supplier::where('company_id', $company?->id)
-            ->orderBy('name');
+            ->orderBy($sort, $direction);
 
         if ($request->filled('search')) {
             $term = '%' . $request->input('search') . '%';
@@ -34,6 +40,10 @@ class AdminSupplierController extends Controller
                 $q->where('name', 'LIKE', $term)
                   ->orWhere('email', 'LIKE', $term);
             });
+        }
+
+        if ($request->filled('type_filter')) {
+            $query->where('type', $request->input('type_filter'));
         }
 
         $suppliers = $query->paginate(25)->withQueryString();
@@ -58,6 +68,7 @@ class AdminSupplierController extends Controller
 
         $validated = $request->validate([
             'name'              => ['required', 'string', 'max:200'],
+            'type'              => ['nullable', 'in:supplier,partner'],
             'email'             => ['nullable', 'email', 'max:200'],
             'phone'             => ['nullable', 'string', 'max:50'],
             'address'           => ['nullable', 'string', 'max:500'],
@@ -72,6 +83,7 @@ class AdminSupplierController extends Controller
 
         $supplier = Supplier::create([
             'company_id' => $company?->id,
+            'type'       => $validated['type'] ?? Supplier::TYPE_SUPPLIER,
             'name'       => $validated['name'],
             'email'      => $validated['email'] ?? null,
             'phone'      => $validated['phone'] ?? null,
@@ -103,6 +115,7 @@ class AdminSupplierController extends Controller
     {
         $validated = $request->validate([
             'name'              => ['required', 'string', 'max:200'],
+            'type'              => ['nullable', 'in:supplier,partner'],
             'email'             => ['nullable', 'email', 'max:200'],
             'phone'             => ['nullable', 'string', 'max:50'],
             'address'           => ['nullable', 'string', 'max:500'],
@@ -115,6 +128,7 @@ class AdminSupplierController extends Controller
         ]);
 
         $supplier->update([
+            'type'     => $validated['type'] ?? $supplier->type,
             'name'     => $validated['name'],
             'email'    => $validated['email'] ?? null,
             'phone'    => $validated['phone'] ?? null,
@@ -130,12 +144,87 @@ class AdminSupplierController extends Controller
     }
 
     /**
+     * POST /admin/suppliers/bulk-set-type
+     * Set the type (supplier|partner) for multiple suppliers at once.
+     */
+    public function bulkSetType(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ids'  => ['required', 'array', 'min:1'],
+            'ids.*'=> ['integer', 'exists:suppliers,id'],
+            'type' => ['required', 'in:supplier,partner'],
+        ]);
+
+        $count = Supplier::whereIn('id', $validated['ids'])->update(['type' => $validated['type']]);
+
+        $label = $validated['type'] === 'partner' ? 'Geschäftspartner' : 'Warenlieferant';
+
+        return back()->with('success', "{$count} Lieferant(en) als \"{$label}\" markiert.");
+    }
+
+    /**
+     * POST /admin/suppliers/{supplier}/merge
+     * Merge a duplicate supplier (source) into this one (target).
+     * Identified by supplier ID to avoid name ambiguity.
+     */
+    public function merge(Request $request, Supplier $target): RedirectResponse
+    {
+        $validated = $request->validate([
+            'source_supplier_id' => ['required', 'integer', 'exists:suppliers,id'],
+        ]);
+
+        $sourceId = (int) $validated['source_supplier_id'];
+
+        if ($sourceId === $target->id) {
+            return back()->with('error', 'Quell- und Ziellieferant dürfen nicht identisch sein.');
+        }
+
+        $source = Supplier::findOrFail($sourceId);
+
+        DB::transaction(function () use ($target, $source): void {
+            // Transfer supplier products
+            $source->supplierProducts()->update(['supplier_id' => $target->id]);
+
+            // Transfer purchase orders
+            $source->purchaseOrders()->update(['supplier_id' => $target->id]);
+
+            // Transfer lexoffice vouchers
+            LexofficeVoucher::where('supplier_id', $source->id)
+                ->update(['supplier_id' => $target->id]);
+
+            // Copy lexoffice_contact_id and lieferanten_nr if target doesn't have them
+            $updates = [];
+            if (! $target->lexoffice_contact_id && $source->lexoffice_contact_id) {
+                $updates['lexoffice_contact_id'] = $source->lexoffice_contact_id;
+            }
+            if (! $target->lieferanten_nr && $source->lieferanten_nr) {
+                $updates['lieferanten_nr'] = $source->lieferanten_nr;
+            }
+            if ($updates) {
+                $target->update($updates);
+            }
+
+            // Delete source contacts and then source record
+            $source->contacts()->delete();
+            $source->delete();
+        });
+
+        return redirect()->route('admin.suppliers.edit', $target)
+            ->with('success', 'Lieferant "' . $source->name . '" (ID ' . $source->id . ') wurde zusammengeführt und gelöscht.');
+    }
+
+    /**
      * DELETE /admin/suppliers/{supplier}
      */
     public function destroy(Supplier $supplier): RedirectResponse
     {
         if ($supplier->purchaseOrders()->exists()) {
             return back()->with('error', 'Dieser Lieferant kann nicht gelöscht werden, da noch Bestellungen vorhanden sind.');
+        }
+
+        // Block Lexoffice re-import before deleting the record
+        if ($supplier->lexoffice_contact_id) {
+            $this->blockLexofficeContact($supplier->lexoffice_contact_id, $supplier->company_id, 'supplier', 'Manuell gelöscht');
         }
 
         $supplier->contacts()->delete();
@@ -180,5 +269,13 @@ class AdminSupplierController extends Controller
         }
 
         $entity->contacts()->whereNotIn('id', $savedIds)->delete();
+    }
+
+    private function blockLexofficeContact(string $lexId, ?int $companyId, string $entity, string $reason): void
+    {
+        DB::table('lexoffice_contact_blocks')->updateOrInsert(
+            ['company_id' => $companyId, 'lexoffice_contact_id' => $lexId],
+            ['blocked_entity' => $entity, 'reason' => $reason, 'created_at' => now()],
+        );
     }
 }

@@ -34,9 +34,16 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  */
 class Supplier extends Model
 {
+    /** Warenlieferant — erscheint in Einkaufsbestellungen */
+    const TYPE_SUPPLIER = 'supplier';
+    /** Geschäftspartner (Krankenkassen, Tankstellen, etc.) — kein Warenlieferant */
+    const TYPE_PARTNER  = 'partner';
+
     protected $fillable = [
         'company_id',
+        'type',
         'lieferanten_nr',
+        'lexoffice_contact_id',
         'name',
         'contact_name',
         'email',

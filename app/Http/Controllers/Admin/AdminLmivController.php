@@ -29,6 +29,20 @@ class AdminLmivController extends Controller
     ) {}
 
     /**
+     * GET /admin/lmiv
+     * Übersicht aller Basis-Artikel mit LMIV-Status.
+     */
+    public function index(): View
+    {
+        $products = Product::where('is_base_item', true)
+            ->with('activeLmivVersion')
+            ->orderBy('artikelnummer')
+            ->paginate(50);
+
+        return view('admin.lmiv.index', compact('products'));
+    }
+
+    /**
      * GET /admin/products/{product}/lmiv
      */
     public function edit(Product $product): View

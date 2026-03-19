@@ -4,9 +4,15 @@
 
 @section('actions')
     <a href="{{ route('admin.products.create') }}" class="btn btn-primary btn-sm">+ Neues Produkt</a>
-    <a href="{{ route('admin.imports.lmiv') }}" class="btn btn-outline btn-sm">
-        LMIV importieren
-    </a>
+    <details class="actions-dropdown">
+        <summary class="btn btn-outline btn-sm">Aktionen ▾</summary>
+        <div class="actions-menu">
+            <a href="{{ route('admin.imports.products') }}">CSV importieren</a>
+            <hr class="actions-menu-divider">
+            <a href="{{ route('admin.lmiv.index') }}">LMIV verwalten</a>
+            <a href="{{ route('admin.imports.lmiv') }}">LMIV importieren</a>
+        </div>
+    </details>
 @endsection
 
 @section('content')

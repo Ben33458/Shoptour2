@@ -7,6 +7,7 @@ namespace App\Models\Pricing;
 use App\Models\Address;
 use App\Models\Contact;
 use App\Models\Orders\Order;
+use App\Models\Pricing\CustomerNote;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -96,6 +97,26 @@ class Customer extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    /**
+     * History notes and Lexoffice diff entries for this customer.
+     *
+     * @return HasMany<CustomerNote>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(CustomerNote::class)->orderByDesc('created_at');
+    }
+
+    /**
+     * Unreviewed notes (e.g. pending Lexoffice diffs).
+     *
+     * @return HasMany<CustomerNote>
+     */
+    public function unreviewedNotes(): HasMany
+    {
+        return $this->hasMany(CustomerNote::class)->whereNull('reviewed_at')->orderByDesc('created_at');
     }
 
     /**

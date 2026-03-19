@@ -119,6 +119,23 @@
             @endauth
         </div>
     </div>
+
+    {{-- ─── Hauptmenü-Leiste (CMS main-Seiten) ────────────────────────────── --}}
+    @if($mainMenuPages->isNotEmpty())
+    <nav class="border-t border-gray-100 bg-amber-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-1 h-10 overflow-x-auto">
+            @foreach($mainMenuPages as $navPage)
+                <a href="{{ route('page.show', $navPage->slug) }}"
+                   class="shrink-0 px-4 py-1.5 rounded-full text-sm font-medium transition-colors
+                          {{ request()->is('seite/' . $navPage->slug)
+                              ? 'bg-amber-500 text-white'
+                              : 'text-amber-800 hover:bg-amber-100' }}">
+                    {{ $navPage->title }}
+                </a>
+            @endforeach
+        </div>
+    </nav>
+    @endif
 </header>
 
 {{-- ─── Flash messages ──────────────────────────────────────────────────────── --}}
@@ -139,11 +156,14 @@
 
 {{-- ─── Footer ─────────────────────────────────────────────────────────────── --}}
 <footer class="border-t border-gray-200 mt-16 py-8 text-center text-sm text-gray-400">
-    &copy; {{ date('Y') }} Kolabri Getränke &mdash;
-    <a href="{{ route('page.show', 'impressum') }}" class="hover:text-gray-600 underline">Impressum</a> &middot;
-    <a href="{{ route('page.show', 'datenschutz') }}" class="hover:text-gray-600 underline">Datenschutz</a> &middot;
-    <a href="{{ route('page.show', 'agb') }}" class="hover:text-gray-600 underline">AGB</a> &middot;
-    <a href="{{ route('page.show', 'widerruf') }}" class="hover:text-gray-600 underline">Widerruf</a>
+    &copy; {{ date('Y') }} Kolabri Getränke
+    @if($footerPages->isNotEmpty())
+        &mdash;
+        @foreach($footerPages as $footerPage)
+            <a href="{{ route('page.show', $footerPage->slug) }}"
+               class="hover:text-gray-600 underline">{{ $footerPage->title }}</a>@if(!$loop->last) &middot; @endif
+        @endforeach
+    @endif
 </footer>
 
 @stack('scripts')

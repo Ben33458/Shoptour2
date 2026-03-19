@@ -2,12 +2,15 @@
 
 namespace App\Providers;
 
+use App\Models\Page;
 use App\Services\Pricing\EloquentPricingRepository;
 use App\Services\Pricing\PricingRepositoryInterface;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -31,7 +34,32 @@ class AppServiceProvider extends ServiceProvider
         Paginator::defaultView('pagination::default');
         Paginator::defaultSimpleView('pagination::simple-default');
 
+        $this->shareNavigationPages();
         $this->configureRateLimiting();
+    }
+
+    // =========================================================================
+    // Navigation pages (CMS — PROJ-30)
+    // =========================================================================
+
+    private function shareNavigationPages(): void
+    {
+        // Lazy-share to shop.layout only — admin pages don't need this.
+        // Cached for 60 s so every page load doesn't hit the DB.
+        View::composer('shop.layout', function (\Illuminate\View\View $view): void {
+            $pages = Cache::remember('cms_nav_pages', 60, fn () =>
+                Page::where('active', true)
+                    ->whereIn('menu', ['main', 'footer'])
+                    ->orderBy('sort_order')
+                    ->orderBy('title')
+                    ->get(['id', 'slug', 'title', 'menu'])
+            );
+
+            $view->with([
+                'mainMenuPages' => $pages->where('menu', 'main')->values(),
+                'footerPages'   => $pages->where('menu', 'footer')->values(),
+            ]);
+        });
     }
 
     // =========================================================================

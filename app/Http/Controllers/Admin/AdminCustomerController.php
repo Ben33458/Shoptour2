@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Admin\LexofficeVoucher;
 use App\Models\Contact;
 use App\Models\Pricing\Customer;
 use App\Models\Pricing\CustomerGroup;
+use App\Models\Pricing\CustomerNote;
+use App\Models\Supplier\Supplier;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 /**
@@ -27,14 +32,19 @@ class AdminCustomerController extends Controller
     {
         $company = App::make('current_company');
 
+        $allowedSorts = ['customer_number', 'company_name', 'email', 'active'];
+        $sort      = in_array($request->input('sort'), $allowedSorts, true) ? $request->input('sort') : 'customer_number';
+        $direction = $request->input('direction') === 'desc' ? 'desc' : 'asc';
+
         $query = Customer::with('customerGroup')
             ->where('company_id', $company?->id)
-            ->orderBy('customer_number');
+            ->orderBy($sort, $direction);
 
         if ($request->filled('search')) {
             $term = '%' . $request->input('search') . '%';
             $query->where(function ($q) use ($term): void {
                 $q->where('customer_number', 'LIKE', $term)
+                  ->orWhere('company_name', 'LIKE', $term)
                   ->orWhere('first_name', 'LIKE', $term)
                   ->orWhere('last_name', 'LIKE', $term)
                   ->orWhere('email', 'LIKE', $term)
@@ -42,9 +52,28 @@ class AdminCustomerController extends Controller
             });
         }
 
+        // Filter: only customers with unreviewed Lexoffice diffs
+        $notesFilter = $request->input('notes_filter');
+        if ($notesFilter === 'lexoffice_diff') {
+            $query->whereHas('notes', function ($q): void {
+                $q->where('type', CustomerNote::TYPE_LEXOFFICE_DIFF)->whereNull('reviewed_at');
+            });
+        }
+
+        // Count for badge in filter tab
+        $pendingDiffCount = Customer::where('company_id', $company?->id)
+            ->whereHas('notes', fn ($q) => $q->where('type', CustomerNote::TYPE_LEXOFFICE_DIFF)->whereNull('reviewed_at'))
+            ->count();
+
         $customers = $query->paginate(25)->withQueryString();
 
-        return view('admin.customers.index', compact('customers'));
+        // Build a set of lexoffice_contact_ids that are also suppliers (dual-role contacts)
+        $supplierLexIds = Supplier::whereNotNull('lexoffice_contact_id')
+            ->pluck('lexoffice_contact_id')
+            ->flip()
+            ->all();
+
+        return view('admin.customers.index', compact('customers', 'pendingDiffCount', 'notesFilter', 'supplierLexIds'));
     }
 
     /**
@@ -168,11 +197,96 @@ class AdminCustomerController extends Controller
             return back()->with('error', 'Dieser Kunde kann nicht gelöscht werden, da noch Bestellungen vorhanden sind.');
         }
 
+        // Block Lexoffice re-import before deleting the record
+        if ($customer->lexoffice_contact_id) {
+            $this->blockLexofficeContact($customer->lexoffice_contact_id, $customer->company_id, 'customer', 'Manuell gelöscht');
+        }
+
         $customer->contacts()->delete();
         $customer->delete();
 
         return redirect()->route('admin.customers.index')
             ->with('success', 'Kunde gelöscht.');
+    }
+
+    /**
+     * GET /admin/customers/{customer}
+     * Customer detail with history notes.
+     */
+    public function show(Customer $customer): View
+    {
+        $customer->load(['customerGroup', 'contacts', 'notes.createdBy', 'notes.reviewedBy']);
+
+        $vouchers = LexofficeVoucher::where('customer_id', $customer->id)
+            ->orderByDesc('voucher_date')
+            ->get();
+
+        return view('admin.customers.show', compact('customer', 'vouchers'));
+    }
+
+    /**
+     * POST /admin/customers/{customer}/notes/{note}/resolve
+     * Mark a customer note as reviewed.
+     */
+    public function resolveNote(Customer $customer, CustomerNote $note): RedirectResponse
+    {
+        abort_if($note->customer_id !== $customer->id, 404);
+
+        $note->update([
+            'reviewed_at'         => now(),
+            'reviewed_by_user_id' => Auth::id(),
+        ]);
+
+        return redirect()
+            ->route('admin.customers.show', $customer)
+            ->with('success', 'Notiz als geprüft markiert.');
+    }
+
+    /**
+     * POST /admin/customers/{customer}/merge
+     * Merge a duplicate customer (source) into this one (target).
+     * All related records are transferred to the target; the source is deleted.
+     */
+    public function merge(Request $request, Customer $target): RedirectResponse
+    {
+        $validated = $request->validate([
+            'source_customer_number' => ['required', 'string', 'max:50'],
+        ]);
+
+        $source = Customer::where('customer_number', $validated['source_customer_number'])
+            ->where('id', '!=', $target->id)
+            ->first();
+
+        if (! $source) {
+            return back()->with('error', 'Kein anderer Kunde mit der Kundennummer "' . $validated['source_customer_number'] . '" gefunden.');
+        }
+
+        DB::transaction(function () use ($target, $source): void {
+            // Transfer orders
+            $source->orders()->update(['customer_id' => $target->id]);
+
+            // Transfer customer notes
+            $source->notes()->update(['customer_id' => $target->id]);
+
+            // Transfer lexoffice vouchers
+            LexofficeVoucher::where('customer_id', $source->id)
+                ->update(['customer_id' => $target->id]);
+
+            // Transfer addresses
+            $source->addresses()->update(['customer_id' => $target->id]);
+
+            // Copy lexoffice_contact_id if target doesn't have one
+            if (! $target->lexoffice_contact_id && $source->lexoffice_contact_id) {
+                $target->update(['lexoffice_contact_id' => $source->lexoffice_contact_id]);
+            }
+
+            // Delete source contacts and then source record
+            $source->contacts()->delete();
+            $source->delete();
+        });
+
+        return redirect()->route('admin.customers.show', $target)
+            ->with('success', 'Kundendatensatz ' . $source->customer_number . ' wurde in diesen Kunden zusammengeführt und gelöscht.');
     }
 
     // -------------------------------------------------------------------------
@@ -212,5 +326,17 @@ class AdminCustomerController extends Controller
 
         // Remove contacts that were deleted in the form
         $entity->contacts()->whereNotIn('id', $savedIds)->delete();
+    }
+
+    /**
+     * Insert into lexoffice_contact_blocks so the contact is skipped on future imports.
+     * Uses INSERT IGNORE / updateOrIgnore to avoid duplicate-key errors.
+     */
+    private function blockLexofficeContact(string $lexId, ?int $companyId, string $entity, string $reason): void
+    {
+        DB::table('lexoffice_contact_blocks')->updateOrInsert(
+            ['company_id' => $companyId, 'lexoffice_contact_id' => $lexId],
+            ['blocked_entity' => $entity, 'reason' => $reason, 'created_at' => now()],
+        );
     }
 }

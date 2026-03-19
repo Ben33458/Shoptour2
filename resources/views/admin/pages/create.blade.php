@@ -1,10 +1,9 @@
 @extends('admin.layout')
 
-@section('title', 'Seite bearbeiten: ' . $page->title)
+@section('title', 'Neue Seite anlegen')
 
 @section('actions')
     <a href="{{ route('admin.pages.index') }}" class="btn btn-sm btn-outline">← Zurück</a>
-    <a href="{{ route('page.show', $page->slug) }}" target="_blank" class="btn btn-sm btn-outline">Vorschau ↗</a>
 @endsection
 
 @push('head')
@@ -13,19 +12,18 @@
 @endpush
 
 @section('content')
-<form method="POST" action="{{ route('admin.pages.update', $page) }}" id="page-form">
+<form method="POST" action="{{ route('admin.pages.store') }}" id="page-form">
     @csrf
-    @method('PUT')
 
-    @include('admin.pages._form', ['page' => $page])
+    @include('admin.pages._form', ['page' => null])
 
     <div style="display:flex;gap:8px;margin-top:16px">
-        <button type="submit" class="btn btn-primary">Speichern</button>
+        <button type="submit" class="btn btn-primary">Seite anlegen</button>
         <a href="{{ route('admin.pages.index') }}" class="btn btn-outline">Abbrechen</a>
     </div>
 </form>
 @endsection
 
 @push('scripts')
-    @include('admin.pages._editor-scripts', ['content' => old('content', $page->content)])
+    @include('admin.pages._editor-scripts', ['content' => old('content', '')])
 @endpush

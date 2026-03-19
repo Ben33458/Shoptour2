@@ -10,6 +10,18 @@
                value="{{ old('name', $supplier?->name) }}"
                placeholder="z.B. Getränke Großhandel GmbH">
     </div>
+    <div class="form-group">
+        <label>Typ</label>
+        <select name="type">
+            <option value="supplier" @selected(old('type', $supplier?->type ?? 'supplier') === 'supplier')>
+                Warenlieferant
+            </option>
+            <option value="partner" @selected(old('type', $supplier?->type) === 'partner')>
+                Geschäftspartner (kein Warenlieferant)
+            </option>
+        </select>
+        <div class="hint" style="margin-top:4px">Geschäftspartner erscheinen nicht in Einkaufsbestellungen.</div>
+    </div>
 </div>
 
 <div class="form-row">

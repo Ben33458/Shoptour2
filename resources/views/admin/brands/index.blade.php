@@ -4,6 +4,12 @@
 
 @section('actions')
     <span style="color:var(--c-muted);font-size:.85rem">{{ $brands->count() }} Einträge</span>
+    <details class="actions-dropdown">
+        <summary class="btn btn-outline btn-sm">Aktionen ▾</summary>
+        <div class="actions-menu">
+            <a href="{{ route('admin.imports.brands') }}">CSV importieren</a>
+        </div>
+    </details>
 @endsection
 
 @section('content')

@@ -28,6 +28,9 @@ use App\Http\Controllers\Admin\AdminProductImportController;
 use App\Http\Controllers\Admin\AdminReportController;
 use App\Http\Controllers\Admin\AdminTasksController;
 use App\Http\Controllers\Admin\AdminProductImageController;
+use App\Http\Controllers\Admin\AdminWarehouseController;
+use App\Http\Controllers\Admin\AdminStockController;
+use App\Http\Controllers\Admin\AdminStockMovementController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -304,15 +307,21 @@ Route::prefix('admin')
 
         // ── Customers (WP-19) ─────────────────────────────────────────────
         Route::resource('customers', AdminCustomerController::class)
-            ->except(['show'])
             ->names([
                 'index'   => 'customers.index',
                 'create'  => 'customers.create',
                 'store'   => 'customers.store',
+                'show'    => 'customers.show',
                 'edit'    => 'customers.edit',
                 'update'  => 'customers.update',
                 'destroy' => 'customers.destroy',
             ]);
+        Route::post('customers/{customer}/notes/{note}/resolve',
+            [AdminCustomerController::class, 'resolveNote'])
+            ->name('customers.notes.resolve');
+        Route::post('customers/{customer}/merge',
+            [AdminCustomerController::class, 'merge'])
+            ->name('customers.merge');
 
         // ── Suppliers (WP-19) ──────────────────────────────────────────────
         Route::resource('suppliers', AdminSupplierController::class)
@@ -325,6 +334,12 @@ Route::prefix('admin')
                 'update'  => 'suppliers.update',
                 'destroy' => 'suppliers.destroy',
             ]);
+        Route::post('suppliers/{supplier}/merge',
+            [AdminSupplierController::class, 'merge'])
+            ->name('suppliers.merge');
+        Route::post('suppliers/bulk-set-type',
+            [AdminSupplierController::class, 'bulkSetType'])
+            ->name('suppliers.bulk-set-type');
 
         // ── CSV Imports ────────────────────────────────────────────────────
         Route::get('/imports/customers', [AdminCustomerImportController::class, 'index'])
@@ -396,7 +411,9 @@ Route::prefix('admin')
         Route::post('/products/{product:id}/images/{image}/sort', [AdminProductImageController::class, 'sort'])
             ->name('products.images.sort');
 
-        // ── LMIV editor (WP-15) ────────────────────────────────────────────
+        // ── LMIV (WP-15) ──────────────────────────────────────────────────
+        Route::get('/lmiv', [AdminLmivController::class, 'index'])
+            ->name('lmiv.index');
         Route::get('/products/{product:id}/lmiv', [AdminLmivController::class, 'edit'])
             ->name('lmiv.edit');
         Route::post('/products/{product:id}/lmiv', [AdminLmivController::class, 'update'])
@@ -407,6 +424,26 @@ Route::prefix('admin')
             ->name('lmiv.new-version');
         Route::post('/products/{product:id}/lmiv/{version}/activate', [AdminLmivController::class, 'activate'])
             ->name('lmiv.activate');
+
+        // ── Lager / Warehouse (PROJ-23) ───────────────────────────────────
+        Route::get('/warehouses', [AdminWarehouseController::class, 'index'])
+            ->name('warehouses.index');
+        Route::get('/warehouses/create', [AdminWarehouseController::class, 'create'])
+            ->name('warehouses.create');
+        Route::post('/warehouses', [AdminWarehouseController::class, 'store'])
+            ->name('warehouses.store');
+        Route::get('/warehouses/{warehouse}', [AdminWarehouseController::class, 'show'])
+            ->name('warehouses.show');
+        Route::get('/warehouses/{warehouse}/edit', [AdminWarehouseController::class, 'edit'])
+            ->name('warehouses.edit');
+        Route::put('/warehouses/{warehouse}', [AdminWarehouseController::class, 'update'])
+            ->name('warehouses.update');
+        Route::delete('/warehouses/{warehouse}', [AdminWarehouseController::class, 'destroy'])
+            ->name('warehouses.destroy');
+        Route::get('/stock', [AdminStockController::class, 'index'])
+            ->name('stock.index');
+        Route::get('/stock-movements', [AdminStockMovementController::class, 'index'])
+            ->name('stock-movements.index');
 
         // ── Reports (WP-16) ───────────────────────────────────────────────
         Route::get('/reports', [AdminReportController::class, 'index'])
@@ -422,6 +459,16 @@ Route::prefix('admin')
             ->name('integrations.lexoffice.update');
         Route::post('/integrations/lexoffice/{invoice}/sync', [AdminIntegrationController::class, 'lexofficeSync'])
             ->name('integrations.lexoffice.sync');
+        Route::post('/integrations/lexoffice/pull/customers', [AdminIntegrationController::class, 'lexofficePullCustomers'])
+            ->name('integrations.lexoffice.pull.customers');
+        Route::post('/integrations/lexoffice/pull/suppliers', [AdminIntegrationController::class, 'lexofficePullSuppliers'])
+            ->name('integrations.lexoffice.pull.suppliers');
+        Route::post('/integrations/lexoffice/pull/vouchers', [AdminIntegrationController::class, 'lexofficePullVouchers'])
+            ->name('integrations.lexoffice.pull.vouchers');
+        Route::post('/integrations/lexoffice/pull/payments', [AdminIntegrationController::class, 'lexofficePullPayments'])
+            ->name('integrations.lexoffice.pull.payments');
+        Route::post('/integrations/lexoffice/reset-imported', [AdminIntegrationController::class, 'lexofficeResetImported'])
+            ->name('integrations.lexoffice.reset-imported');
 
         // ── Driver API tokens ──────────────────────────────────────────────
         Route::get('/driver-tokens', [AdminDriverTokenController::class, 'index'])
@@ -443,10 +490,13 @@ Route::prefix('admin')
         Route::get('/diagnostics', [AdminDiagnosticsController::class, 'index'])
             ->name('diagnostics');
 
-        // ── CMS-Seiten ────────────────────────────────────────────────────
+        // ── CMS-Seiten (PROJ-30) ──────────────────────────────────────────
         Route::get('/pages', [AdminPageController::class, 'index'])->name('pages.index');
+        Route::get('/pages/create', [AdminPageController::class, 'create'])->name('pages.create');
+        Route::post('/pages', [AdminPageController::class, 'store'])->name('pages.store');
         Route::get('/pages/{page}/edit', [AdminPageController::class, 'edit'])->name('pages.edit');
         Route::put('/pages/{page}', [AdminPageController::class, 'update'])->name('pages.update');
+        Route::delete('/pages/{page}', [AdminPageController::class, 'destroy'])->name('pages.destroy');
 
         // ── Deployment operations ──────────────────────────────────────────
         Route::get('/deploy', [AdminDeployController::class, 'index'])

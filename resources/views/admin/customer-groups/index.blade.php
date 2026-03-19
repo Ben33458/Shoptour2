@@ -1,5 +1,15 @@
 @extends('admin.layout')
 @section('title', 'Kundengruppen')
+
+@section('actions')
+    <details class="actions-dropdown">
+        <summary class="btn btn-outline btn-sm">Aktionen ▾</summary>
+        <div class="actions-menu">
+            <a href="{{ route('admin.imports.customer-groups') }}">CSV importieren</a>
+        </div>
+    </details>
+@endsection
+
 @section('content')
 <div class="card">
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif
