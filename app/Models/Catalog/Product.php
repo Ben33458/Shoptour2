@@ -125,6 +125,12 @@ class Product extends Model
         'show_in_shop',
         'is_base_item',
         'base_item_product_id',
+        'ninox_artikel_id',
+        'wawi_artikel_id',
+        'volume_ml',
+        'gebinde_units',
+        'unit_volume_ml',
+        'alkoholgehalt_vol_percent',
     ];
 
     /**
@@ -141,6 +147,95 @@ class Product extends Model
         'tax_rate_id'            => 'integer',
         'base_item_product_id'   => 'integer',
     ];
+
+    // =========================================================================
+    // Computed attributes
+
+    /**
+     * Grundpreis gemäß PAngV (Preisangabenverordnung).
+     * Gibt "X,XX €/L" zurück wenn volume_ml gesetzt ist, sonst null.
+     * Bevorzugter Referenzwert für Getränke: pro Liter.
+     */
+    public function getGrundpreisTextAttribute(): ?string
+    {
+        if (! $this->volume_ml || $this->volume_ml <= 0) {
+            return null;
+        }
+        if (! $this->base_price_gross_milli) {
+            return null;
+        }
+        $priceEur       = $this->base_price_gross_milli / 1_000_000;
+        $pricePerLiter  = $priceEur / ($this->volume_ml / 1000);
+        return number_format($pricePerLiter, 2, ',', '.') . ' €/L';
+    }
+
+    /**
+     * Formatierter Gebinde-Text für die Anzeige, z.B. "20 × 0,5 L".
+     * Gibt null zurück wenn unit_volume_ml nicht gesetzt.
+     */
+    public function getGebindeUnitTextAttribute(): ?string
+    {
+        if (! $this->unit_volume_ml) {
+            return null;
+        }
+        $unitL         = $this->unit_volume_ml / 1000;
+        $decimals      = ($unitL == floor($unitL)) ? 0 : (fmod($unitL * 10, 1) == 0 ? 1 : 2);
+        $unitFormatted = number_format($unitL, $decimals, ',', '');
+        if ($this->gebinde_units && $this->gebinde_units > 1) {
+            return $this->gebinde_units . ' × ' . $unitFormatted . ' L';
+        }
+        return $unitFormatted . ' L';
+    }
+
+    /**
+     * Produktname mit whitespace-nowrap um Gebinde-Einheiten (für Shop-Anzeige).
+     * Sicher im Blade via {!! !!} verwenden — HTML-escaped, nur span-Tags eingefügt.
+     */
+    public function getProduktnameFormattedAttribute(): string
+    {
+        $name = e($this->produktname);
+        return preg_replace(
+            '/(\d+\s*[xX×]\s*\d+[.,]?\d*\s*[lL]|\d+[.,]\d+\s*[lL]|\d{2,}\s*[lL])\b/u',
+            '<span class="whitespace-nowrap">$1</span>',
+            $name
+        );
+    }
+
+    /**
+     * Parst Gebinde-Einheit aus dem Produktnamen.
+     * Gibt ['units' => int, 'unit_ml' => int, 'total_ml' => int] zurück oder null.
+     *
+     * Beispiele:
+     *   "Schlappeseppel Pils 20x0,5 l"  → ['units' => 20, 'unit_ml' => 500,  'total_ml' => 10000]
+     *   "Absolut Vodka 0,7 l"           → ['units' =>  1, 'unit_ml' => 700,  'total_ml' =>   700]
+     *   "Bierfass 30l"                  → ['units' =>  1, 'unit_ml' => 30000,'total_ml' => 30000]
+     */
+    public static function parseGebindeFromName(string $name): ?array
+    {
+        // Muster 1: "20x0,5 l" / "6 x 1,00l" / "24X0,33l"
+        if (preg_match('/(\d+)\s*[xX×]\s*(\d+[.,]\d+)\s*l\b/iu', $name, $m)) {
+            $units  = (int) $m[1];
+            $unitMl = (int) round((float) str_replace(',', '.', $m[2]) * 1000);
+            return ['units' => $units, 'unit_ml' => $unitMl, 'total_ml' => $units * $unitMl];
+        }
+        // Muster 2: "6x1 l" (ganzzahliger Inhalt)
+        if (preg_match('/(\d+)\s*[xX×]\s*(\d+)\s*l\b/iu', $name, $m)) {
+            $units  = (int) $m[1];
+            $unitMl = (int) $m[2] * 1000;
+            return ['units' => $units, 'unit_ml' => $unitMl, 'total_ml' => $units * $unitMl];
+        }
+        // Muster 3: "0,75 l" / "0,5l" (Einzel-Flasche mit Dezimalwert)
+        if (preg_match('/\b(\d+[.,]\d+)\s*l\b/iu', $name, $m)) {
+            $unitMl = (int) round((float) str_replace(',', '.', $m[1]) * 1000);
+            return ['units' => 1, 'unit_ml' => $unitMl, 'total_ml' => $unitMl];
+        }
+        // Muster 4: "30l Fass" (ganzzahlig ≥ 2 Ziffern, z.B. 30l, 50l — kein "1l" um false positives zu vermeiden)
+        if (preg_match('/\b(\d{2,})\s*l\b/iu', $name, $m)) {
+            $unitMl = (int) $m[1] * 1000;
+            return ['units' => 1, 'unit_ml' => $unitMl, 'total_ml' => $unitMl];
+        }
+        return null;
+    }
 
     // =========================================================================
     // Relationships
@@ -246,6 +341,14 @@ class Product extends Model
         return $this->hasMany(StockMovement::class);
     }
 
+    // ── Supplier relationships ────────────────────────────────────────────────
+
+    /** @return HasMany<\App\Models\Supplier\SupplierProduct> */
+    public function supplierProducts(): HasMany
+    {
+        return $this->hasMany(\App\Models\Supplier\SupplierProduct::class, 'product_id');
+    }
+
     // ── WP-15 LMIV & Base-item relationships ─────────────────────────────────
 
     /**
@@ -304,6 +407,18 @@ class Product extends Model
         return $this->hasMany(ProductImage::class)->orderBy('sort_order');
     }
 
+    /** @return HasMany<\App\Models\Bestandsaufnahme\ArtikelVerpackungseinheit> */
+    public function verpackungseinheiten(): HasMany
+    {
+        return $this->hasMany(\App\Models\Bestandsaufnahme\ArtikelVerpackungseinheit::class, 'product_id');
+    }
+
+    /** @return HasMany<\App\Models\Bestandsaufnahme\ArtikelMindestbestand> */
+    public function mindestbestaende(): HasMany
+    {
+        return $this->hasMany(\App\Models\Bestandsaufnahme\ArtikelMindestbestand::class, 'product_id');
+    }
+
     /**
      * The main (first) product image.
      *
@@ -317,6 +432,28 @@ class Product extends Model
     // =========================================================================
     // Domain Helpers
     // =========================================================================
+
+    /**
+     * Returns the URL of the category-appropriate placeholder image.
+     * Used when a product has no product images uploaded.
+     *
+     * Category mapping:
+     *   Wasser (1,2,10,12)             → platzhalter_wasser_einzeln.png
+     *   Bier (3,4,5,6,11,13,14,15)    → platzhalter_bier_einzeln.png
+     *   Cola/Limo/Schorle (7,8,9)     → platzhalter_softdrinks_einzeln.png
+     *   everything else               → platzhalter_wein_spirituosen_einzeln.png
+     */
+    public function placeholderImageUrl(): string
+    {
+        $file = match (true) {
+            in_array($this->category_id, [1, 2, 10, 12])               => 'platzhalter_wasser_final_800.png',
+            in_array($this->category_id, [3, 4, 5, 6, 11, 13, 14, 15]) => 'platzhalter_bier_final_800.png',
+            in_array($this->category_id, [7, 8, 9])                    => 'platzhalter_softdrinks_final_800.png',
+            default                                                     => 'platzhalter_wein_spirituosen_final_800.png',
+        };
+
+        return \Storage::url('products/placeholder/' . $file);
+    }
 
     /**
      * Returns true when this product carries LMIV data (is_base_item = true).

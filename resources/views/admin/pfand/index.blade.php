@@ -1,5 +1,14 @@
 @extends('admin.layout')
 @section('title', 'Pfandpositionen')
+
+@section('actions')
+    <form method="POST" action="{{ route('admin.pfand-items.import') }}"
+          onsubmit="return confirm('Pfand aus JTL WaWi importieren? Bestehende Einträge werden nicht überschrieben.')">
+        @csrf
+        <button type="submit" class="btn btn-outline btn-sm">↓ Aus WaWi importieren</button>
+    </form>
+@endsection
+
 @section('content')
 <div class="card">
     @if(session('success'))<div class="alert alert-success">{{ session('success') }}</div>@endif

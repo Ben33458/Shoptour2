@@ -1,29 +1,20 @@
-<!DOCTYPE html>
-<html lang="de">
-<head><meta charset="UTF-8"><title>Zahlungserinnerung</title></head>
-<body style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<x-mail::message>
 
-<h2>Zahlungserinnerung</h2>
+Sehr geehrte Damen und Herren,
 
-<p>Sehr geehrte Damen und Herren,</p>
+für die Rechnung **{{ $invoice->invoice_number }}** steht noch ein offener Betrag aus.
 
-<p>
-    F\u00fcr die Rechnung <strong>{{ $invoice->invoice_number }}</strong>
-    steht noch ein offener Betrag aus.
-</p>
+<x-mail::table>
+| | |
+|:---|---:|
+| **Offener Betrag** | **{{ number_format($invoice->balanceMilli() / 1_000_000, 2, ',', '.') }} €** |
+</x-mail::table>
 
-<table style="width:100%; border-collapse: collapse; margin: 20px 0;">
-    <tr>
-        <td style="padding: 8px 4px; font-weight: bold;">Offener Betrag</td>
-        <td style="padding: 8px 4px; font-weight: bold; text-align: right;">
-            {{ number_format($invoice->balanceMilli() / 1_000_000, 2, ',', '.') }} \u20ac
-        </td>
-    </tr>
-</table>
+Bitte begleichen Sie den ausstehenden Betrag zeitnah.
 
-<p>Bitte begleichen Sie den ausstehenden Betrag zeitnah.</p>
+Mit freundlichen Grüßen,
 
-<p>Mit freundlichen Gr\u00fc\u00dfen</p>
+Benedikt Schneider<br>
+Kolabri Getränke
 
-</body>
-</html>
+</x-mail::message>

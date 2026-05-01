@@ -13,15 +13,7 @@
 - **Queue:** `deferred_tasks` Tabelle (kein Redis, kein Horizon — Shared-Hosting!)
 - **Storage:** Laravel Storage (lokales Filesystem auf Shared-Hosting)
 - **PDF:** dompdf / barryvdh/laravel-dompdf
-- **Email:** Laravel Mail (SMTP)
-
-### Deployment
-- **Backend:** Shared-Hosting bei Internetwerk (PHP 8.2+, MySQL)
-
-## Referenz-Projekt
-
-> `d:\Claude_Code\Getraenkeshop\shop-tours\` ist das ALTE Referenz-Projekt.
-> Es wird NICHT verändert — nur als Vorlage/Referenz gelesen.
+- **Email:** Laravel Mail (SMTP) — **immer `<x-mail::message>` verwenden** (siehe unten)
 
 ## Projektstruktur
 
@@ -49,6 +41,8 @@ d:\Claude_Code\Getraenkeshop\Shoptour2\   ← Dieses Repo (Laravel Backend NEU)
     PRD.md                 Product Requirements Document
 ```
 
+Alle Tabellen mit Pr�fix `wawi_` oder `ninox_` sind reine Sync-Importtabellen aus externen Systemen. Sie sind nicht die Stelle f�r eigene Projektlogik. Diese Tabellen k�nnen jederzeit durch einen neuen Import �berschrieben werden. Deshalb dort keine manuellen �nderungen, keine internen Status, keine zus�tzlichen Gesch�ftslogiken und keine projektkritischen Erweiterungen einbauen. Alles, was intern gebraucht wird, muss in separaten Projekttabellen liegen.
+
 ## Development Workflow
 
 1. `/requirements` - Feature-Spec aus Idee erstellen
@@ -71,6 +65,103 @@ Alle Features in `features/INDEX.md`. Jede Skill liest es am Anfang und aktualis
 - **Multi-Tenant:** `company_id` auf ALLEN Tabellen vorbereiten
 - **Keine echte Queue:** `deferred_tasks` als DB-basierte Queue (Shared-Hosting!)
 - **Referenz lesen, nicht ändern:** shop-tours nur lesen, nie committen
+
+## Modell-Feldnamen (Achtung: nicht-standard)
+
+| Modell | Korrekt | NICHT |
+|---|---|---|
+| `Product` | `produktname` | `name` |
+| `Product` | `artikelnummer` | `sku` |
+| `ProductImage` | `Storage::url($image->path)` | `$image->url` |
+
+## Sub-User Auflösungsmuster
+
+In **allen** Shop-Controllern muss `requireCustomer()` / `resolveCustomer()` Sub-User korrekt auflösen:
+
+```php
+if ($user->isSubUser()) {
+    return $user->subUser?->parentCustomer;
+}
+return $user->customer; // nur für role=kunde
+```
+
+Niemals nur `$user->isKunde()` prüfen — Sub-User (role=`sub_user`) werden dabei stillschweigend abgelehnt.
+
+Betroffene Controller: `AccountController`, `CheckoutController`, `ShopController`, `FavoriteController`, `CartController`.
+
+## Preisanzeige-Modus
+
+Reihenfolge: Kunde-eigene Einstellung → Kundengruppe → Fallback Brutto.
+
+```php
+$priceDisplayMode = $customer?->price_display_mode
+    ?: ($customerGroup?->price_display_mode ?? CustomerGroup::DISPLAY_BRUTTO);
+```
+
+Kunden können ihren Modus selbst unter `/mein-konto/profil` ändern (`customers.price_display_mode`).
+
+## CartService — direkt nutzen, kein HTTP
+
+Für programmatisches Hinzufügen zum Warenkorb (z. B. aus FavoriteController):
+
+```php
+$this->cart->add($productId, $qty, $user); // CartService direkt
+```
+
+NICHT über HTTP `POST /warenkorb` — das würde die `shop.order`-Middleware auslösen.
+
+## Middleware `shop.order`
+
+Alias für `EnforceShopOrderPermission`. Auf `POST /warenkorb` aktiv.
+Blockiert Sub-User, die nur `bestellen_favoritenliste` (nicht `bestellen_all`) haben.
+Direktbestellungen aus dem Stammsortiment gehen am Warenkorb-Route vorbei → kein Problem.
+
+## Sub-User Permissions — neue Felder erweitern
+
+Wenn neue Berechtigungen hinzukommen, müssen **beide** Stellen aktualisiert werden:
+1. `SubUser::defaultPermissions()` — neues Feld + Defaultwert
+2. `SubUserController::invite()` und `updatePermissions()` — Validierung + Zuweisung
+3. `CustomerPermissions` (Support-Klasse) — neue Methode
+4. `sub-users/index.blade.php` — Checkbox + Badge + `openPermModal()` JS
+
+## E-Mail-Templates — Pflichtkonvention
+
+**Jede neue E-Mail MUSS `<x-mail::message>` als äußeren Wrapper verwenden.**
+
+Das Layout (`resources/views/vendor/mail/html/`) enthält Logo, Branding und Footer automatisch.
+
+### Mailable-Klasse
+```php
+return new Content(
+    markdown: 'emails.mein-template',  // NICHT view:
+);
+```
+
+### Template (`resources/views/emails/mein-template.blade.php`)
+```blade
+<x-mail::message>
+
+Hallo {{ $name }},
+
+Dein Inhalt hier. Markdown funktioniert.
+
+<x-mail::button :url="$url">
+Button-Text
+</x-mail::button>
+
+<x-mail::table>
+| Spalte 1 | Spalte 2 |
+|:---|---:|
+| Wert | 1,00 € |
+</x-mail::table>
+
+Mit freundlichen Grüßen,
+{{ config('app.name') }}
+
+</x-mail::message>
+```
+
+**Niemals** rohe `<!DOCTYPE html>`-Templates ohne `<x-mail::message>` anlegen — diese umgehen das Branding komplett.
 
 ## Build & Test Commands
 

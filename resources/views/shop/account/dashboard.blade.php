@@ -1,28 +1,38 @@
-@extends('shop.layout')
+@extends('shop.account.account-layout')
 
 @section('title', 'Mein Konto')
 
-@section('content')
-<div class="max-w-4xl mx-auto">
+@section('account-content')
+<div>
 
     {{-- Header --}}
+    @php
+        $displayName = $customer->company_name
+            ?: trim(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? ''))
+            ?: Auth::user()->name;
+    @endphp
     <div class="flex items-center gap-4 mb-8">
         @if(Auth::user()->avatar_url)
             <img src="{{ Auth::user()->avatar_url }}" class="w-16 h-16 rounded-full" alt="">
         @else
             <div class="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-600">
-                {{ mb_substr(Auth::user()->name, 0, 1) }}
+                {{ mb_substr($displayName, 0, 1) }}
             </div>
         @endif
-        <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ Auth::user()->name }}</h1>
-            <p class="text-gray-400 text-sm">{{ Auth::user()->email }}</p>
+        <div class="flex-1">
+            <h1 class="text-2xl font-bold text-gray-900">{{ $displayName }}</h1>
+            <p class="text-gray-400 text-sm">{{ $customer->email ?: Auth::user()->email }}</p>
             <p class="text-sm text-amber-600">{{ $customer->customerGroup?->name ?? 'Standard' }}</p>
+            <p class="text-xs text-gray-400">Kundennr.: {{ $customer->customer_number }}</p>
         </div>
+        <a href="{{ route('account.profile') }}"
+           class="shrink-0 text-sm text-gray-400 hover:text-amber-600 border border-gray-200 hover:border-amber-300 rounded-xl px-3 py-1.5 transition-colors">
+            Profil bearbeiten
+        </a>
     </div>
 
     {{-- Quick nav --}}
-    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-8">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
         <a href="{{ route('account.orders') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
             <div class="text-2xl mb-1">📦</div>
             <p class="text-sm font-medium text-gray-700">Bestellungen</p>
@@ -31,10 +41,31 @@
             <div class="text-2xl mb-1">📍</div>
             <p class="text-sm font-medium text-gray-700">Adressen</p>
         </a>
+        <a href="{{ route('account.profile') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
+            <div class="text-2xl mb-1">👤</div>
+            <p class="text-sm font-medium text-gray-700">Profil & Einstellungen</p>
+        </a>
+        <a href="{{ route('account.favorites') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
+            <div class="text-2xl mb-1">📋</div>
+            <p class="text-sm font-medium text-gray-700">Stammsortiment</p>
+        </a>
+        @if(!Auth::user()->isSubUser())
+        <a href="{{ route('account.sub-users') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
+            <div class="text-2xl mb-1">👥</div>
+            <p class="text-sm font-medium text-gray-700">Unterbenutzer</p>
+        </a>
+        @endif
+        @if($customer->lexoffice_contact_id)
+        <a href="{{ route('account.invoices') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
+            <div class="text-2xl mb-1">🧾</div>
+            <p class="text-sm font-medium text-gray-700">Rechnungen</p>
+        </a>
+        @else
         <a href="{{ route('shop.index') }}" class="bg-white border border-gray-100 rounded-2xl p-4 hover:border-amber-300 transition-colors text-center">
             <div class="text-2xl mb-1">🛒</div>
             <p class="text-sm font-medium text-gray-700">Weiter shoppen</p>
         </a>
+        @endif
     </div>
 
     {{-- Recent orders --}}

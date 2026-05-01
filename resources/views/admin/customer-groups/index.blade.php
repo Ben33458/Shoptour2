@@ -55,7 +55,7 @@
                     $fixedEur = number_format($g->price_adjustment_fixed_milli / 1_000_000, 2, '.', '');
                     $adjDisplay = match($g->price_adjustment_type) {
                         'fixed'   => milli_to_eur($g->price_adjustment_fixed_milli),
-                        'percent' => ($g->price_adjustment_percent_basis_points / 100) . ' %',
+                        'percent' => ($g->price_adjustment_percent_basis_points / 10_000) . ' %',
                         default   => '—',
                     };
                 @endphp

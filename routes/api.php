@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\PosProductController;
 use App\Http\Controllers\Api\PosSaleController;
 use App\Http\Controllers\Api\ShopProductController;
+use App\Http\Controllers\Api\SyncController;
 use App\Http\Controllers\Driver\DriverBootstrapController;
 use App\Http\Controllers\Driver\DriverSyncController;
 use App\Http\Controllers\Driver\DriverUploadController;
@@ -82,3 +83,20 @@ Route::prefix('products')
 Route::post('/payments/webhook/stripe', WebhookController::class)
     ->middleware('throttle:stripe-webhook')
     ->name('payments.webhook.stripe');
+
+/*
+|--------------------------------------------------------------------------
+| JTL WaWi Sync
+|--------------------------------------------------------------------------
+|
+| POST /api/sync  – receives entity batches from JTL Wawi export script.
+| Authenticated via static bearer token (WAWI_SYNC_TOKEN in .env).
+|
+*/
+Route::post('sync', SyncController::class)
+    ->middleware('wawi.token')
+    ->name('api.sync');
+
+Route::get('sync/state', \App\Http\Controllers\Api\SyncStateController::class)
+    ->middleware('wawi.token')
+    ->name('api.sync.state');

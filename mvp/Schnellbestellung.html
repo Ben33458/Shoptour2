@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schnellbestellung</title>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Helvetica Neue, Helvetica, Arial, sans-serif;
+    background: #f0ede8;
+    color: #1a1a1a;
+    min-height: 100vh;
+    font-size: 13px;
+  }
+
+  #root { min-height: 100vh; display: flex; flex-direction: column; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ── Mock Produktdatenbank ──────────────────────────────────────────────
+const PRODUCTS = [
+  { id: "10001", name: "Kugelschreiber blau 0,5mm", unit: "Stk", price: 0.49 },
+  { id: "10002", name: "Kugelschreiber rot 0,5mm",  unit: "Stk", price: 0.49 },
+  { id: "10003", name: "Kugelschreiber schwarz 0,5mm", unit: "Stk", price: 0.49 },
+  { id: "10010", name: "Bleistift HB",              unit: "Stk", price: 0.39 },
+  { id: "10011", name: "Bleistift 2B",              unit: "Stk", price: 0.42 },
+  { id: "10020", name: "Radiergummi weiß",          unit: "Stk", price: 0.29 },
+  { id: "10030", name: "Lineal 30cm Kunststoff",    unit: "Stk", price: 1.19 },
+  { id: "10031", name: "Lineal 50cm Metall",        unit: "Stk", price: 2.49 },
+  { id: "20001", name: "Kopierpapier A4 80g/m² 500Bl.", unit: "Pkg", price: 4.99 },
+  { id: "20002", name: "Kopierpapier A4 90g/m² 500Bl.", unit: "Pkg", price: 5.99 },
+  { id: "20003", name: "Kopierpapier A3 80g/m² 500Bl.", unit: "Pkg", price: 8.49 },
+  { id: "20010", name: "Briefumschlag DIN C4 weiß 25Stk", unit: "Pkg", price: 3.79 },
+  { id: "20011", name: "Briefumschlag DIN C5 weiß 25Stk", unit: "Pkg", price: 2.99 },
+  { id: "20020", name: "Notizbuch A5 kariert 96Bl.", unit: "Stk", price: 4.29 },
+  { id: "20021", name: "Notizbuch A4 liniert 96Bl.", unit: "Stk", price: 5.49 },
+  { id: "20022", name: "Notizbuch A5 blanko 96Bl.", unit: "Stk", price: 4.29 },
+  { id: "30001", name: "Tesa Film 33m×19mm 3er Pack", unit: "Pack", price: 2.89 },
+  { id: "30002", name: "Tesa Doppelklebeband 7,5m", unit: "Rl",  price: 2.19 },
+  { id: "30010", name: "Locher 2-fach schwarz",     unit: "Stk", price: 6.99 },
+  { id: "30011", name: "Locher 2-fach silber",      unit: "Stk", price: 8.49 },
+  { id: "30020", name: "Heftmaschine 20Bl. schwarz","unit": "Stk", price: 7.99 },
+  { id: "30021", name: "Heftklammern 24/6 1000Stk", unit: "Pkg", price: 1.29 },
+  { id: "40001", name: "Ordner A4 8cm breit schwarz", unit: "Stk", price: 3.49 },
+  { id: "40002", name: "Ordner A4 5cm breit blau",  unit: "Stk", price: 2.99 },
+  { id: "40003", name: "Ordner A4 8cm breit rot",   unit: "Stk", price: 3.49 },
+  { id: "40010", name: "Hängeregistratur A4 25er Set", unit: "Set", price: 12.99 },
+  { id: "40020", name: "Karteikarten A6 blanko 100Stk", unit: "Pkg", price: 1.79 },
+  { id: "40021", name: "Karteikarten A6 liniert 100Stk", unit: "Pkg", price: 1.79 },
+  { id: "50001", name: "Druckerpatrone HP 301 schwarz", unit: "Stk", price: 12.99 },
+  { id: "50002", name: "Druckerpatrone HP 301 color",   unit: "Stk", price: 14.99 },
+  { id: "50003", name: "Druckerpatrone HP 302 schwarz", unit: "Stk", price: 13.49 },
+  { id: "50010", name: "Tonerkartusche Samsung MLT-D111S", unit: "Stk", price: 39.99 },
+  { id: "60001", name: "Haftnotizen 75×75mm gelb 100Bl.", unit: "Blk", price: 1.49 },
+  { id: "60002", name: "Haftnotizen 75×75mm neon 4er Set", unit: "Set", price: 2.99 },
+  { id: "60010", name: "Textmarker gelb",           unit: "Stk", price: 0.89 },
+  { id: "60011", name: "Textmarker Set 4 Farben",   unit: "Set", price: 2.49 },
+  { id: "60020", name: "Permanent-Marker schwarz",  unit: "Stk", price: 1.29 },
+  { id: "60021", name: "Permanent-Marker Set 4 Farben", unit: "Set", price: 4.49 },
+  { id: "70001", name: "Schere 21cm Büro",          unit: "Stk", price: 3.99 },
+  { id: "70010", name: "Cutter 18mm",               unit: "Stk", price: 2.49 },
+  { id: "70020", name: "Kleber Pritt 20g",          unit: "Stk", price: 1.29 },
+  { id: "70021", name: "Klebestift Pritt 40g",      unit: "Stk", price: 1.99 },
+  { id: "80001", name: "Schreibtischunterlage 60×40cm", unit: "Stk", price: 8.99 },
+  { id: "80010", name: "Stifteköcher schwarz",      unit: "Stk", price: 4.49 },
+  { id: "80020", name: "Briefkorb A4 schwarz",      unit: "Stk", price: 7.99 },
+];
+
+function searchProducts(query) {
+  if (!query || query.trim() === "") return [];
+  const q = query.trim().toLowerCase();
+  // exact article number match first
+  const byId = PRODUCTS.filter(p => p.id.startsWith(q));
+  // then name search
+  const byName = PRODUCTS.filter(p =>
+    !p.id.startsWith(q) && p.name.toLowerCase().includes(q)
+  );
+  return [...byId, ...byName].slice(0, 8);
+}
+
+function findByArticleNumber(num) {
+  return PRODUCTS.find(p => p.id === num.trim());
+}
+
+// ── Row state factory ──────────────────────────────────────────────────
+let rowKey = 0;
+function newRow(overrides = {}) {
+  return {
+    key: rowKey++,
+    query: "",       // what the user typed in the article/name field
+    product: null,   // resolved product object
+    qty: "",
+    ...overrides,
+  };
+}
+
+// ── Dropdown ──────────────────────────────────────────────────────────
+function Dropdown({ results, activeIndex, onSelect, onHover }) {
+  if (!results.length) return null;
+  return (
+    <div style={{
+      position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+      background: "#fff",
+      border: "1px solid #ccc",
+      borderTop: "none",
+      boxShadow: "0 4px 12px rgba(0,0,0,.12)",
+      maxHeight: 280, overflowY: "auto",
+    }}>
+      {results.map((p, i) => (
+        <div
+          key={p.id}
+          onMouseDown={e => { e.preventDefault(); onSelect(p); }}
+          onMouseEnter={() => onHover(i)}
+          style={{
+            padding: "6px 10px",
+            display: "flex", gap: 12, alignItems: "baseline",
+            cursor: "pointer",
+            background: i === activeIndex ? "#1a6ef5" : "transparent",
+            color: i === activeIndex ? "#fff" : "#1a1a1a",
+          }}
+        >
+          <span style={{ fontFamily: "monospace", fontSize: 12, opacity: .7, minWidth: 48 }}>{p.id}</span>
+          <span style={{ flex: 1 }}>{p.name}</span>
+          <span style={{ opacity: .6, fontSize: 12 }}>{p.unit}</span>
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: 52, textAlign: "right", fontSize: 12 }}>
+            {p.price.toFixed(2)} €
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Single order row ───────────────────────────────────────────────────
+function OrderRow({ row, rowIndex, isLast, onChange, onArticleEnter, onQtyEnter, onDelete, focusField }) {
+  const articleRef = useRef(null);
+  const qtyRef = useRef(null);
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [ddActive, setDdActive] = useState(-1);
+  const [showDd, setShowDd] = useState(false);
+
+  // focus management
+  useEffect(() => {
+    if (focusField === "article" && articleRef.current) {
+      articleRef.current.focus();
+      articleRef.current.select();
+    }
+    if (focusField === "qty" && qtyRef.current) {
+      qtyRef.current.focus();
+      qtyRef.current.select();
+    }
+  }, [focusField]);
+
+  function handleArticleChange(e) {
+    const val = e.target.value;
+    onChange({ query: val, product: null });
+    const results = searchProducts(val);
+    setSuggestions(results);
+    setDdActive(-1);
+    setShowDd(results.length > 0 && val.trim() !== "");
+  }
+
+  function commitProduct(product) {
+    onChange({ query: product.id, product });
+    setSuggestions([]);
+    setShowDd(false);
+    // move to qty
+    setTimeout(() => qtyRef.current?.focus(), 0);
+  }
+
+  function handleArticleKeyDown(e) {
+    if (showDd && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setDdActive(i => Math.min(i + 1, suggestions.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setDdActive(i => Math.max(i - 1, -1));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        if (ddActive >= 0) {
+          e.preventDefault();
+          commitProduct(suggestions[ddActive]);
+          return;
+        }
+      }
+      if (e.key === "Escape") {
+        setShowDd(false);
+        setDdActive(-1);
+        return;
+      }
+    }
+
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      // try exact article number lookup
+      const exact = findByArticleNumber(row.query);
+      if (exact) {
+        onChange({ query: exact.id, product: exact });
+        setSuggestions([]);
+        setShowDd(false);
+        setTimeout(() => qtyRef.current?.focus(), 0);
+      } else if (row.product) {
+        setTimeout(() => qtyRef.current?.focus(), 0);
+      } else {
+        onArticleEnter();
+      }
+    }
+
+    if (e.key === "Backspace" && row.query === "" && rowIndex > 0) {
+      onDelete();
+    }
+  }
+
+  function handleQtyKeyDown(e) {
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      onQtyEnter();
+    }
+    if (e.key === "Backspace" && row.qty === "") {
+      e.preventDefault();
+      setTimeout(() => articleRef.current?.focus(), 0);
+    }
+  }
+
+  const hasProduct = !!row.product;
+  const lineTotal = hasProduct && row.qty ? row.product.price * parseFloat(row.qty || 0) : null;
+
+  return (
+    <tr style={{ borderBottom: "1px solid #e8e4de" }}>
+      {/* Pos */}
+      <td style={{ width: 36, textAlign: "center", color: "#999", fontSize: 11, paddingTop: 2 }}>
+        {rowIndex + 1}
+      </td>
+
+      {/* Artikel / Name */}
+      <td style={{ position: "relative", paddingRight: 4 }}>
+        <div style={{ position: "relative" }}>
+          <input
+            ref={articleRef}
+            value={row.query}
+            onChange={handleArticleChange}
+            onKeyDown={handleArticleKeyDown}
+            onBlur={() => setTimeout(() => setShowDd(false), 150)}
+            onFocus={() => {
+              if (suggestions.length > 0 && row.query) setShowDd(true);
+            }}
+            placeholder={rowIndex === 0 ? "Artikelnummer oder Name …" : ""}
+            style={{
+              width: "100%",
+              border: "none",
+              borderBottom: `1.5px solid ${hasProduct ? "#1a6ef5" : "#ccc"}`,
+              background: "transparent",
+              padding: "5px 0",
+              fontSize: 13,
+              outline: "none",
+              color: hasProduct ? "#0a0a0a" : "#1a1a1a",
+              fontFamily: "inherit",
+            }}
+          />
+          {showDd && (
+            <Dropdown
+              results={suggestions}
+              activeIndex={ddActive}
+              onSelect={commitProduct}
+              onHover={setDdActive}
+            />
+          )}
+        </div>
+      </td>
+
+      {/* Produktname (resolved) */}
+      <td style={{ color: hasProduct ? "#1a1a1a" : "#bbb", paddingLeft: 8, paddingRight: 4, fontSize: 13, minWidth: 220 }}>
+        {hasProduct ? row.product.name : <span style={{ fontStyle: "italic" }}>—</span>}
+      </td>
+
+      {/* Einheit */}
+      <td style={{ color: "#888", width: 48, paddingLeft: 4, fontSize: 12 }}>
+        {hasProduct ? row.product.unit : ""}
+      </td>
+
+      {/* Menge */}
+      <td style={{ width: 80, paddingLeft: 8 }}>
+        <input
+          ref={qtyRef}
+          value={row.qty}
+          onChange={e => onChange({ qty: e.target.value })}
+          onKeyDown={handleQtyKeyDown}
+          placeholder="Menge"
+          type="number"
+          min="1"
+          style={{
+            width: "100%",
+            border: "none",
+            borderBottom: `1.5px solid ${row.qty ? "#1a6ef5" : "#ccc"}`,
+            background: "transparent",
+            padding: "5px 0",
+            fontSize: 13,
+            outline: "none",
+            textAlign: "right",
+            fontFamily: "inherit",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        />
+      </td>
+
+      {/* EP */}
+      <td style={{ width: 80, textAlign: "right", color: "#888", fontSize: 12, paddingLeft: 8 }}>
+        {hasProduct ? row.product.price.toFixed(2) + " €" : ""}
+      </td>
+
+      {/* Gesamt */}
+      <td style={{ width: 90, textAlign: "right", fontSize: 13, fontVariantNumeric: "tabular-nums", paddingLeft: 8, color: lineTotal ? "#1a1a1a" : "#ccc" }}>
+        {lineTotal != null ? lineTotal.toFixed(2) + " €" : ""}
+      </td>
+
+      {/* Delete */}
+      <td style={{ width: 28, textAlign: "center" }}>
+        <button
+          onClick={onDelete}
+          tabIndex={-1}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "#ccc", fontSize: 16, lineHeight: 1,
+            padding: "2px 4px",
+            borderRadius: 3,
+            transition: "color .15s",
+          }}
+          onMouseEnter={e => e.target.style.color = "#e04545"}
+          onMouseLeave={e => e.target.style.color = "#ccc"}
+        >×</button>
+      </td>
+    </tr>
+  );
+}
+
+// ── Main App ───────────────────────────────────────────────────────────
+function App() {
+  const [rows, setRows] = useState([newRow()]);
+  const [focusTarget, setFocusTarget] = useState({ key: rows[0].key, field: "article" });
+  const [orderNote, setOrderNote] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  function updateRow(key, patch) {
+    setRows(rs => rs.map(r => r.key === key ? { ...r, ...patch } : r));
+  }
+
+  function addRowAfter(key) {
+    setRows(rs => {
+      const idx = rs.findIndex(r => r.key === key);
+      const nr = newRow();
+      const next = [...rs.slice(0, idx + 1), nr, ...rs.slice(idx + 1)];
+      setTimeout(() => setFocusTarget({ key: nr.key, field: "article" }), 0);
+      return next;
+    });
+  }
+
+  function deleteRow(key) {
+    setRows(rs => {
+      if (rs.length === 1) return [newRow()];
+      const idx = rs.findIndex(r => r.key === key);
+      const next = rs.filter(r => r.key !== key);
+      const focusIdx = Math.min(idx, next.length - 1);
+      setTimeout(() => setFocusTarget({ key: next[focusIdx].key, field: "article" }), 0);
+      return next;
+    });
+  }
+
+  function handleQtyEnter(key) {
+    // If last row, add new row; else focus next article
+    setRows(rs => {
+      const idx = rs.findIndex(r => r.key === key);
+      if (idx === rs.length - 1) {
+        const nr = newRow();
+        setTimeout(() => setFocusTarget({ key: nr.key, field: "article" }), 0);
+        return [...rs, nr];
+      } else {
+        setTimeout(() => setFocusTarget({ key: rs[idx + 1].key, field: "article" }), 0);
+        return rs;
+      }
+    });
+  }
+
+  const validRows = rows.filter(r => r.product && r.qty && parseFloat(r.qty) > 0);
+  const total = validRows.reduce((s, r) => s + r.product.price * parseFloat(r.qty), 0);
+  const totalItems = validRows.reduce((s, r) => s + parseFloat(r.qty), 0);
+
+  function handleSubmit() {
+    if (validRows.length === 0) return;
+    setSubmitted(true);
+  }
+
+  function handleReset() {
+    rowKey = 0;
+    const r = newRow();
+    setRows([r]);
+    setFocusTarget({ key: r.key, field: "article" });
+    setOrderNote("");
+    setSubmitted(false);
+  }
+
+  if (submitted) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", flex: 1, gap: 16, padding: 40,
+      }}>
+        <div style={{
+          background: "#fff", borderRadius: 2, padding: "40px 48px",
+          boxShadow: "0 2px 12px rgba(0,0,0,.08)", maxWidth: 480, width: "100%",
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 12, color: "#1a6ef5" }}>✓</div>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Bestellung aufgegeben</h2>
+          <p style={{ color: "#666", marginBottom: 24 }}>
+            {validRows.length} Positionen · {totalItems.toFixed(0)} Artikel · {total.toFixed(2)} € gesamt
+          </p>
+          <button onClick={handleReset} style={{
+            background: "#1a6ef5", color: "#fff", border: "none",
+            padding: "10px 24px", borderRadius: 2, cursor: "pointer",
+            fontSize: 13, fontFamily: "inherit",
+          }}>
+            Neue Bestellung
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+
+      {/* Header */}
+      <header style={{
+        background: "#1a1a1a", color: "#fff",
+        padding: "0 24px",
+        display: "flex", alignItems: "center", gap: 24,
+        height: 44, flexShrink: 0,
+      }}>
+        <span style={{ fontWeight: 700, letterSpacing: "-.01em", fontSize: 14 }}>Schnellbestellung</span>
+        <span style={{ color: "#555", fontSize: 12 }}>Bestellerfassung</span>
+        <div style={{ flex: 1 }}></div>
+        <span style={{ color: "#555", fontSize: 11 }}>{new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+      </header>
+
+      {/* Content */}
+      <main style={{ flex: 1, padding: "24px 24px 0", maxWidth: 1100, width: "100%", margin: "0 auto" }}>
+
+        {/* Keyboard hint */}
+        <div style={{
+          display: "flex", gap: 16, marginBottom: 16,
+          color: "#999", fontSize: 11, alignItems: "center",
+        }}>
+          <Kbd>Enter</Kbd><span>nächstes Feld</span>
+          <span style={{ marginLeft: 4 }}></span>
+          <Kbd>↑↓</Kbd><span>Vorschläge navigieren</span>
+          <span style={{ marginLeft: 4 }}></span>
+          <Kbd>Backspace</Kbd><span>Feld leeren / Zeile löschen</span>
+        </div>
+
+        {/* Table */}
+        <div style={{ background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,.06)" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f7f5f2", borderBottom: "2px solid #e0dcd6" }}>
+                <th style={th}>#</th>
+                <th style={{ ...th, width: 120, textAlign: "left" }}>Artikel-Nr.</th>
+                <th style={{ ...th, textAlign: "left" }}>Bezeichnung</th>
+                <th style={{ ...th, width: 48 }}>Einh.</th>
+                <th style={{ ...th, width: 80, textAlign: "right" }}>Menge</th>
+                <th style={{ ...th, width: 80, textAlign: "right" }}>EP (€)</th>
+                <th style={{ ...th, width: 90, textAlign: "right" }}>Gesamt (€)</th>
+                <th style={{ ...th, width: 28 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                <OrderRow
+                  key={row.key}
+                  row={row}
+                  rowIndex={i}
+                  isLast={i === rows.length - 1}
+                  onChange={patch => updateRow(row.key, patch)}
+                  onArticleEnter={() => {}}
+                  onQtyEnter={() => handleQtyEnter(row.key)}
+                  onDelete={() => deleteRow(row.key)}
+                  focusField={focusTarget?.key === row.key ? focusTarget.field : null}
+                />
+              ))}
+            </tbody>
+          </table>
+
+          {/* Add row button */}
+          <button
+            onClick={() => {
+              const nr = newRow();
+              setRows(rs => [...rs, nr]);
+              setTimeout(() => setFocusTarget({ key: nr.key, field: "article" }), 0);
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: "none", border: "none",
+              color: "#1a6ef5", cursor: "pointer",
+              padding: "10px 16px", fontSize: 12,
+              fontFamily: "inherit",
+              width: "100%", textAlign: "left",
+              borderTop: "1px solid #f0ede8",
+              transition: "background .1s",
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = "#f7f9ff"}
+            onMouseLeave={e => e.currentTarget.style.background = "none"}
+          >
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Zeile hinzufügen
+          </button>
+        </div>
+
+        {/* Footer bar */}
+        <div style={{
+          display: "flex", alignItems: "flex-end", gap: 24,
+          marginTop: 16, paddingBottom: 24,
+        }}>
+          {/* Note */}
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Bestellnotiz (optional)</label>
+            <textarea
+              value={orderNote}
+              onChange={e => setOrderNote(e.target.value)}
+              rows={2}
+              placeholder="z.B. dringend, Lager 2 …"
+              style={{
+                width: "100%", border: "1px solid #ddd",
+                padding: "6px 8px", fontSize: 12,
+                fontFamily: "inherit", resize: "vertical",
+                background: "#fff", outline: "none",
+                color: "#1a1a1a", borderRadius: 0,
+              }}
+            />
+          </div>
+
+          {/* Summary + Submit */}
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            {validRows.length > 0 && (
+              <div style={{ marginBottom: 12, color: "#666", fontSize: 12 }}>
+                <span>{validRows.length} Position{validRows.length !== 1 ? "en" : ""}</span>
+                <span style={{ marginLeft: 12, color: "#1a1a1a", fontSize: 16, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                  {total.toFixed(2)} €
+                </span>
+              </div>
+            )}
+            <button
+              onClick={handleSubmit}
+              disabled={validRows.length === 0}
+              style={{
+                background: validRows.length > 0 ? "#1a6ef5" : "#ccc",
+                color: "#fff", border: "none",
+                padding: "10px 28px", cursor: validRows.length > 0 ? "pointer" : "default",
+                fontSize: 13, fontFamily: "inherit", fontWeight: 500,
+                transition: "background .15s",
+                borderRadius: 0,
+              }}
+              onMouseEnter={e => { if (validRows.length > 0) e.target.style.background = "#0f5ce0"; }}
+              onMouseLeave={e => { if (validRows.length > 0) e.target.style.background = "#1a6ef5"; }}
+            >
+              Bestellung aufgeben
+            </button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────
+const th = {
+  padding: "8px 6px 8px 6px",
+  fontSize: 11,
+  fontWeight: 600,
+  color: "#888",
+  textTransform: "uppercase",
+  letterSpacing: ".04em",
+  textAlign: "center",
+  whiteSpace: "nowrap",
+};
+
+function Kbd({ children }) {
+  return (
+    <span style={{
+      background: "#e8e4de", border: "1px solid #ccc",
+      borderRadius: 3, padding: "1px 5px",
+      fontSize: 10, fontFamily: "monospace",
+      color: "#555",
+    }}>{children}</span>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

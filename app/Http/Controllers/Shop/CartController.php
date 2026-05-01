@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Shop;
 use App\Http\Controllers\Controller;
 use App\Models\Catalog\Product;
 use App\Models\User;
+use App\Services\Catalog\JugendschutzService;
+use App\Services\Rental\RentalCartService;
 use App\Services\Shop\CartService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -29,6 +31,7 @@ class CartController extends Controller
 {
     public function __construct(
         private readonly CartService $cart,
+        private readonly RentalCartService $rentalCart,
     ) {}
 
     /**
@@ -39,14 +42,29 @@ class CartController extends Controller
         $user     = $this->authUser();
         $cartData = $this->cart->calculate($user);
 
+        $rentalSummary = $this->rentalCart->getItemsSummary();
+        $rentalFrom    = $this->rentalCart->getDateFrom();
+        $rentalUntil   = $this->rentalCart->getDateUntil();
+        $rentalTotal   = $this->rentalCart->totalNetMilli();
+        $drinksTotal   = $cartData['total_milli'];
+        $grandTotal    = $drinksTotal + $rentalTotal;
+        $minAge        = JugendschutzService::cartMinAge($cartData['items']);
+
         return view('shop.cart', [
             'items'             => $cartData['items'],
+            'minAge'            => $minAge,
             'subtotalNet'       => $cartData['subtotal_net_milli'],
             'subtotalGross'     => $cartData['subtotal_gross_milli'],
             'pfandTotal'        => $cartData['pfand_total_milli'],
             'taxBreakdown'      => $cartData['tax_breakdown'],
-            'grandTotal'        => $cartData['total_milli'],
+            'drinksTotal'       => $drinksTotal,
+            'grandTotal'        => $grandTotal,
             'hasUnavailable'    => $cartData['has_unavailable'],
+            'rentalSummary'     => $rentalSummary,
+            'rentalFrom'        => $rentalFrom,
+            'rentalUntil'       => $rentalUntil,
+            'rentalTotal'       => $rentalTotal,
+            'isEmpty'           => empty($cartData['items']) && $rentalSummary->isEmpty(),
         ]);
     }
 

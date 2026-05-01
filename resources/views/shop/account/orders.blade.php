@@ -1,14 +1,11 @@
-@extends('shop.layout')
+@extends('shop.account.account-layout')
 
 @section('title', 'Meine Bestellungen')
 
-@section('content')
-<div class="max-w-4xl mx-auto">
+@section('account-content')
+<div>
 
-    <div class="flex items-center gap-3 mb-6">
-        <a href="{{ route('account') }}" class="text-sm text-gray-400 hover:text-amber-600">← Mein Konto</a>
-        <h1 class="text-2xl font-bold text-gray-900">Bestellungen</h1>
-    </div>
+    <h1 class="text-2xl font-bold text-gray-900 mb-6">Bestellungen</h1>
 
     @forelse($orders as $order)
         <div class="bg-white rounded-2xl border border-gray-100 p-5 mb-3">

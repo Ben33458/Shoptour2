@@ -36,7 +36,7 @@ class StoreCheckoutRequest extends FormRequest
                 'required_if:delivery_type,home_delivery',
                 'nullable',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if ($value !== null && $value !== 'new' && (!ctype_digit((string) $value) || (int) $value <= 0)) {
+                    if ($value !== null && $value !== 'new' && $value !== 'event_location' && (!ctype_digit((string) $value) || (int) $value <= 0)) {
                         $fail('Ungültige Lieferadresse.');
                     }
                 },
@@ -57,11 +57,14 @@ class StoreCheckoutRequest extends FormRequest
             'drop_off_location_custom' => ['nullable', 'required_if:drop_off_location,sonstiges', 'string', 'max:500'],
             'leave_at_door'            => ['nullable', 'boolean'],
 
+            // Event location as delivery address
+            'event_location_delivery_id' => ['nullable', 'integer', 'exists:event_locations,id'],
+
             // Step 2b: Pickup warehouse (pickup)
             'pickup_warehouse_id' => ['required_if:delivery_type,pickup', 'nullable', 'integer', 'exists:warehouses,id'],
 
-            // Step 3: Delivery date
-            'delivery_date' => ['required', 'date', 'after:today'],
+            // Step 3: Delivery date (not required for rental-only orders)
+            'delivery_date' => ['required_without:has_rental_items', 'nullable', 'date', 'after:today'],
 
             // Step 3: Tour assignment
             'tour_id' => ['nullable', 'integer', 'exists:regular_delivery_tours,id'],
@@ -71,6 +74,21 @@ class StoreCheckoutRequest extends FormRequest
 
             // Step 5: Customer notes
             'customer_notes' => ['nullable', 'string', 'max:1000'],
+
+            // Event fields (required when rental items are in cart)
+            'has_rental_items'       => ['nullable', 'boolean'],
+            'event_location_name'    => ['nullable', 'string', 'max:255'],
+            'event_location_street'  => ['nullable', 'string', 'max:255'],
+            'event_location_zip'     => ['nullable', 'string', 'max:10'],
+            'event_location_city'    => ['nullable', 'string', 'max:100'],
+            'event_contact_name'     => ['required_if:has_rental_items,1', 'nullable', 'string', 'max:150'],
+            'event_contact_phone'    => ['required_if:has_rental_items,1', 'nullable', 'string', 'max:50'],
+            'event_delivery_mode'    => ['required_if:has_rental_items,1', 'nullable', Rule::in(['delivery', 'self_pickup'])],
+            'event_pickup_mode'      => ['required_if:has_rental_items,1', 'nullable', Rule::in(['pickup_by_us', 'self_return'])],
+            'event_access_notes'     => ['nullable', 'string', 'max:1000'],
+            'event_setup_notes'      => ['nullable', 'string', 'max:1000'],
+            'event_has_power'        => ['nullable', 'boolean'],
+            'event_suitable_ground'  => ['nullable', 'boolean'],
         ];
     }
 
@@ -94,7 +112,15 @@ class StoreCheckoutRequest extends FormRequest
             'new_address.street.required_if' => 'Bitte gib eine Strasse an.',
             'new_address.zip.required_if'    => 'Bitte gib eine PLZ an.',
             'new_address.city.required_if'   => 'Bitte gib eine Stadt an.',
-            'tour_id.exists'                 => 'Die gewaehlte Tour existiert nicht.',
+            'tour_id.exists'                      => 'Die gewaehlte Tour existiert nicht.',
+            'event_location_name.required_if'     => 'Bitte gib den Namen des Veranstaltungsortes an.',
+            'event_location_street.required_if'   => 'Bitte gib die Straße des Veranstaltungsortes an.',
+            'event_location_zip.required_if'      => 'Bitte gib die PLZ des Veranstaltungsortes an.',
+            'event_location_city.required_if'     => 'Bitte gib den Ort des Veranstaltungsortes an.',
+            'event_contact_name.required_if'      => 'Bitte gib einen Ansprechpartner vor Ort an.',
+            'event_contact_phone.required_if'     => 'Bitte gib eine Telefonnummer für den Ansprechpartner an.',
+            'event_delivery_mode.required_if'     => 'Bitte wähle die Lieferart für die Leihartikel.',
+            'event_pickup_mode.required_if'       => 'Bitte wähle die Rückgabeart für die Leihartikel.',
         ];
     }
 }

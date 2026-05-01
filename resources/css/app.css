@@ -8,4 +8,17 @@
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* ── Kolabri brand colors: amber → #1e90d0 blue ──────────────── */
+    --color-amber-50:  #eff8ff;
+    --color-amber-100: #dbeeff;
+    --color-amber-200: #b6dcf5;
+    --color-amber-300: #7ec4ea;
+    --color-amber-400: #48a9da;
+    --color-amber-500: #1e90d0;
+    --color-amber-600: #1678b8;
+    --color-amber-700: #125e92;
+    --color-amber-800: #0e4a6e;
+    --color-amber-900: #0a3552;
+    --color-amber-950: #061e30;
 }

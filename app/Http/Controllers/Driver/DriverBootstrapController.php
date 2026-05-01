@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Driver;
 
 use App\Http\Controllers\Controller;
+use App\Models\Catalog\ProductLeergut;
 use App\Models\Delivery\Tour;
+use App\Models\Delivery\TourStop;
+use App\Models\Driver\DriverSetting;
 use App\Models\Driver\DriverUpload;
+use App\Models\Employee\Employee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * GET /api/driver/bootstrap[?date=YYYY-MM-DD]
@@ -74,12 +79,15 @@ class DriverBootstrapController extends Controller
             'status'      => $stop->status,
             'arrived_at'  => $stop->arrived_at?->toIso8601String(),
             'finished_at' => $stop->finished_at?->toIso8601String(),
+            'departed_at' => $stop->departed_at?->toIso8601String(),
 
             // Customer / delivery details for driver display
             'customer_name'    => $stop->order?->customer
                 ? trim(($stop->order->customer->first_name ?? '') . ' ' . ($stop->order->customer->last_name ?? ''))
                 : null,
-            'delivery_address' => $stop->order?->customer?->delivery_address_text,
+            'delivery_address' => $stop->order?->deliveryAddress?->oneLiner()
+                ?? $stop->order?->customer?->defaultDeliveryAddress?->oneLiner()
+                ?? $stop->order?->customer?->delivery_address_text,
             'delivery_note'    => $stop->order?->customer?->delivery_note,
 
             'order' => $stop->order ? [
@@ -109,16 +117,43 @@ class DriverBootstrapController extends Controller
             'uploads_count' => (int) ($uploadCounts[$stop->id] ?? 0),
         ])->values();
 
+        // Cash register for this employee
+        $cashRegister = null;
+        if ($employeeId !== null) {
+            $employee = Employee::find($employeeId);
+            if ($employee && $employee->cash_register_id) {
+                $cashRegister = [
+                    'id'   => $employee->cash_register_id,
+                    'name' => $employee->cashRegister?->name,
+                ];
+            }
+        }
+
+        // Average stop duration per customer (seconds) across last 60 days
+        $avgDurations = $this->buildAvgDurations($stops->pluck('order.customer.id')->filter()->unique()->all());
+
+        // Leergut map: product_id → leergut article info (from wawi_artikel_attribute)
+        $leergutMap = $this->buildLeergutMap($stops);
+
+        // Delay threshold from settings (default 30%)
+        $delayThreshold = (int) DriverSetting::get('delay_threshold_percent', 30);
+
         return response()->json([
-            'tour'  => [
-                'id'        => $tour->id,
-                'tour_date' => $tour->tour_date instanceof \Illuminate\Support\Carbon
+            'tour' => [
+                'id'         => $tour->id,
+                'tour_date'  => $tour->tour_date instanceof \Illuminate\Support\Carbon
                     ? $tour->tour_date->toDateString()
                     : (string) $tour->tour_date,
-                'status'    => $tour->status,
+                'status'     => $tour->status,
+                'started_at' => $tour->started_at?->toIso8601String(),
+                'ended_at'   => $tour->ended_at?->toIso8601String(),
             ],
-            'stops' => $stopsData,
-            'date'  => $date,
+            'stops'           => $stopsData,
+            'date'            => $date,
+            'cash_register'   => $cashRegister,
+            'avg_durations'   => $avgDurations,
+            'leergut_map'     => $leergutMap,
+            'delay_threshold' => $delayThreshold,
         ]);
     }
 
@@ -136,6 +171,76 @@ class DriverBootstrapController extends Controller
         }
 
         return now()->toDateString();
+    }
+
+    /**
+     * Build avg stop duration in seconds per customer_id over the last 60 days.
+     * Uses arrived_at → departed_at (preferred) or arrived_at → finished_at.
+     *
+     * @param  int[] $customerIds
+     * @return array<int, int>  customer_id → avg seconds
+     */
+    private function buildAvgDurations(array $customerIds): array
+    {
+        if (empty($customerIds)) {
+            return [];
+        }
+
+        $since = now()->subDays(60)->toDateString();
+
+        $rows = DB::table('tour_stops as ts')
+            ->join('tours as t', 't.id', '=', 'ts.tour_id')
+            ->join('orders as o', 'o.id', '=', 'ts.order_id')
+            ->whereIn('o.customer_id', $customerIds)
+            ->where('t.tour_date', '>=', $since)
+            ->whereNotNull('ts.arrived_at')
+            ->where(function ($q): void {
+                $q->whereNotNull('ts.departed_at')->orWhereNotNull('ts.finished_at');
+            })
+            ->select(
+                'o.customer_id',
+                DB::raw('AVG(TIMESTAMPDIFF(SECOND, ts.arrived_at, COALESCE(ts.departed_at, ts.finished_at))) as avg_seconds')
+            )
+            ->groupBy('o.customer_id')
+            ->get();
+
+        return $rows->pluck('avg_seconds', 'customer_id')
+            ->map(fn ($v) => (int) round((float) $v))
+            ->all();
+    }
+
+    /**
+     * Build leergut map: product_id → { leergut_kArtikel, leergut_name, leergut_art_nr,
+     *                                    unit_price_net_milli, unit_price_gross_milli }
+     * Uses wawi_artikel_attribute (PfandARtNr) to find the leergut article.
+     */
+    private function buildLeergutMap(\Illuminate\Support\Collection $stops): array
+    {
+        $productIds = $stops->flatMap(fn ($s) => $s->order?->items?->pluck('product_id') ?? collect())
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $leergutRows = ProductLeergut::whereIn('product_id', $productIds)
+            ->get()
+            ->keyBy('product_id');
+
+        $map = [];
+        foreach ($leergutRows as $productId => $row) {
+            $map[(int) $productId] = [
+                'leergut_art_nr'          => $row->leergut_art_nr,
+                'leergut_name'            => $row->leergut_name,
+                'unit_price_net_milli'    => $row->unit_price_net_milli,
+                'unit_price_gross_milli'  => $row->unit_price_gross_milli,
+            ];
+        }
+
+        return $map;
     }
 
     /**

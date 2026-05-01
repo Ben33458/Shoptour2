@@ -1,6 +1,6 @@
 # PROJ-32: Admin: Einkauf (PurchaseOrders, Workflow)
 
-## Status: Planned
+## Status: In Review
 **Created:** 2026-03-01
 **Last Updated:** 2026-03-01
 

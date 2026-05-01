@@ -15,6 +15,8 @@ use App\Services\Catalog\LmivVersioningService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -54,7 +56,10 @@ class AdminProductController extends Controller
         if ($search !== '') {
             $query->where(function ($q) use ($search): void {
                 $q->where('artikelnummer', 'like', "%{$search}%")
-                  ->orWhere('produktname', 'like', "%{$search}%");
+                  ->orWhere('produktname', 'like', "%{$search}%")
+                  ->orWhereHas('barcodes', function ($bq) use ($search): void {
+                      $bq->where('barcode', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -73,6 +78,7 @@ class AdminProductController extends Controller
      */
     public function show(Product $product): View
     {
+        $product->load(['brand', 'productLine', 'category.parent', 'warengruppe', 'gebinde', 'taxRate', 'barcodes', 'baseItem']);
         $lmivVersions = $product->lmivVersions()->with('createdBy')->get();
 
         return view('admin.products.base-item', compact('product', 'lmivVersions'));
@@ -189,10 +195,70 @@ class AdminProductController extends Controller
 
         // ── Full-form PUT ──
         $validated = $request->validate($this->validationRules($product->id));
-        $product->update($this->prepareData($validated, $request));
+        $product->update($this->prepareData($validated, $request, $product));
 
         return redirect()->route('admin.products.show', $product)
             ->with('success', 'Produkt gespeichert.');
+    }
+
+    // =========================================================================
+    // Basis-Artikel creation (from existing Gebinde product)
+    // =========================================================================
+
+    /**
+     * GET /admin/products/{product}/create-basis-artikel
+     */
+    public function createBasisArtikel(Product $source): View
+    {
+        [$brands, $productLines, $categories, $gebindeList, $taxRates] = $this->lookupData();
+
+        // Strip "24x", "6x " etc. from product name
+        $suggestedName = trim(preg_replace('/\b\d+\s*[xX]\s*/', '', $source->produktname) ?? '');
+
+        // Price suggestion: net price ÷ gebinde_units
+        $units = max(1, $source->gebinde_units ?? 1);
+        $suggestedNetMilli = (int) round($source->base_price_net_milli / $units);
+
+        // Unit volume in liters with comma decimal, no trailing zeros
+        $suggestedUnitVolumeL = '';
+        if ($source->unit_volume_ml) {
+            $suggestedUnitVolumeL = rtrim(
+                rtrim(number_format($source->unit_volume_ml / 1000, 3, ',', ''), '0'),
+                ','
+            );
+        }
+
+        $defaultTaxRateId = $source->tax_rate_id;
+
+        return view('admin.products.create-basis-artikel', compact(
+            'source', 'brands', 'productLines', 'categories',
+            'gebindeList', 'taxRates',
+            'suggestedName', 'suggestedNetMilli', 'suggestedUnitVolumeL', 'defaultTaxRateId',
+        ));
+    }
+
+    /**
+     * POST /admin/products/{product}/store-basis-artikel
+     */
+    public function storeBasisArtikel(Request $request, Product $source): RedirectResponse
+    {
+        $validated = $request->validate($this->validationRules());
+
+        $basisArtikel = null;
+
+        DB::transaction(function () use ($validated, $request, $source, &$basisArtikel): void {
+            $basisArtikel = Product::create(array_merge(
+                $this->prepareData($validated, $request),
+                ['is_base_item' => true]
+            ));
+
+            $this->lmivService->ensureActiveVersion($basisArtikel, $request->user()?->id);
+
+            $source->update(['base_item_product_id' => $basisArtikel->id]);
+        });
+
+        return redirect()->route('admin.products.show', $basisArtikel)
+            ->with('success', 'Basis-Artikel angelegt: ' . $basisArtikel->artikelnummer);
     }
 
     // =========================================================================
@@ -215,16 +281,17 @@ class AdminProductController extends Controller
     private function validationRules(?int $ignoreId = null): array
     {
         return [
-            'artikelnummer'      => ['required', 'string', 'max:50',
+            'artikelnummer'        => ['required', 'string', 'max:50',
                 Rule::unique('products', 'artikelnummer')->ignore($ignoreId)],
-            'produktname'        => ['required', 'string', 'max:255'],
-            'brand_id'           => ['nullable', 'exists:brands,id'],
-            'product_line_id'    => ['nullable', 'exists:product_lines,id'],
-            'category_id'        => ['nullable', 'exists:categories,id'],
-            'gebinde_id'         => ['nullable', 'exists:gebinde,id'],
-            'tax_rate_id'        => ['nullable', 'exists:tax_rates,id'],
-            'base_price_net_eur' => ['required', 'numeric', 'min:0'],
-            'availability_mode'  => ['required', Rule::in([
+            'produktname'          => ['required', 'string', 'max:255'],
+            'brand_id'             => ['nullable', 'exists:brands,id'],
+            'product_line_id'      => ['nullable', 'exists:product_lines,id'],
+            'category_id'          => ['nullable', 'exists:categories,id'],
+            'gebinde_id'           => ['nullable', 'exists:gebinde,id'],
+            'tax_rate_id'          => ['nullable', 'exists:tax_rates,id'],
+            'base_price_net_eur'   => ['nullable', 'numeric', 'min:0'],
+            'base_price_gross_eur' => ['nullable', 'numeric', 'min:0'],
+            'availability_mode'    => ['required', Rule::in([
                 Product::AVAILABILITY_AVAILABLE,
                 Product::AVAILABILITY_PREORDER,
                 Product::AVAILABILITY_OUT_OF_STOCK,
@@ -232,23 +299,45 @@ class AdminProductController extends Controller
                 Product::AVAILABILITY_STOCK_BASED,
             ])],
             'active'             => ['nullable', 'boolean'],
+            'gebinde_units'      => ['nullable', 'integer', 'min:1', 'max:9999'],
+            'unit_volume_l'      => ['nullable', 'regex:/^\d+([.,]\d+)?$/'],
+            'volume_l'           => ['nullable', 'regex:/^\d+([.,]\d+)?$/'],
+            'alkoholgehalt_vol_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ];
     }
 
     /** Convert validated form data to model attributes. */
-    private function prepareData(array $validated, Request $request): array
+    private function prepareData(array $validated, Request $request, ?Product $existing = null): array
     {
-        $netMilli = eur_to_milli((float) $validated['base_price_net_eur']);
-
-        // Calculate gross from tax rate
-        $taxRate  = isset($validated['tax_rate_id'])
+        $taxRate = isset($validated['tax_rate_id'])
             ? TaxRate::find($validated['tax_rate_id'])
             : null;
-        $factor      = $taxRate ? (1 + $taxRate->rate_basis_points / 10_000) : 1.19;
-        $grossMilli  = (int) round($netMilli * $factor);
+        $factor = $taxRate ? (1 + $taxRate->rate_basis_points / 10_000) : 1.19;
+
+        // Accept either netto or brutto; calculate the missing one
+        if (! empty($validated['base_price_gross_eur']) && empty($validated['base_price_net_eur'])) {
+            $grossMilli = eur_to_milli((float) $validated['base_price_gross_eur']);
+            $netMilli   = (int) round($grossMilli / $factor);
+        } else {
+            $netMilli   = eur_to_milli((float) ($validated['base_price_net_eur'] ?? 0));
+            $grossMilli = (int) round($netMilli * $factor);
+        }
+
+        // On update keep existing slug; on create generate a unique one
+        if ($existing) {
+            $slug = $existing->slug;
+        } else {
+            $baseSlug = Str::slug($validated['produktname']) ?: 'produkt';
+            $slug = $baseSlug;
+            $i = 2;
+            while (Product::where('slug', $slug)->exists()) {
+                $slug = $baseSlug . '-' . $i++;
+            }
+        }
 
         return [
             'artikelnummer'         => $validated['artikelnummer'],
+            'slug'                  => $slug,
             'produktname'           => $validated['produktname'],
             'brand_id'              => $validated['brand_id'] ?? null,
             'product_line_id'       => $validated['product_line_id'] ?? null,
@@ -259,6 +348,24 @@ class AdminProductController extends Controller
             'base_price_gross_milli'=> $grossMilli,
             'availability_mode'     => $validated['availability_mode'],
             'active'                => $request->boolean('active'),
+            'gebinde_units'         => isset($validated['gebinde_units']) ? (int) $validated['gebinde_units'] : null,
+            // Konvertiere L-Eingaben → ml (Komma als Dezimaltrennzeichen wird akzeptiert)
+            'unit_volume_ml'        => isset($validated['unit_volume_l']) && $validated['unit_volume_l'] !== ''
+                                           ? (int) round((float) str_replace(',', '.', $validated['unit_volume_l']) * 1000)
+                                           : null,
+            // Auto-berechne volume_ml aus gebinde_units × unit_volume_ml; sonst manueller volume_l-Wert
+            'volume_ml'             => (function () use ($validated): ?int {
+                                           $units  = isset($validated['gebinde_units']) ? (int) $validated['gebinde_units'] : null;
+                                           $unitMl = isset($validated['unit_volume_l']) && $validated['unit_volume_l'] !== ''
+                                               ? (int) round((float) str_replace(',', '.', $validated['unit_volume_l']) * 1000)
+                                               : null;
+                                           if ($units && $unitMl) return $units * $unitMl;
+                                           if (isset($validated['volume_l']) && $validated['volume_l'] !== '') {
+                                               return (int) round((float) str_replace(',', '.', $validated['volume_l']) * 1000);
+                                           }
+                                           return null;
+                                       })(),
+            'alkoholgehalt_vol_percent' => $validated['alkoholgehalt_vol_percent'] ?? null,
         ];
     }
 }

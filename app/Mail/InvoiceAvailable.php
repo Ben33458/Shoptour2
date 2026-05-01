@@ -32,7 +32,7 @@ class InvoiceAvailable extends Mailable
     public function content(): Content
     {
         return new Content(
-            view: 'emails.invoice_available',
+            markdown: 'emails.invoice_available',
         );
     }
 

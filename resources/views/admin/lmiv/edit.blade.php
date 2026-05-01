@@ -69,6 +69,14 @@
     </div>
 </div>
 
+{{-- ── OFF-data review notice ── --}}
+@if(($editVersion?->data_json['source'] ?? null) === 'open_food_facts')
+<div class="alert alert-warning" style="margin-bottom:16px">
+    ⚠️ Diese LMIV-Daten wurden automatisch von <strong>Open Food Facts</strong> importiert.
+    Bitte alle Felder (insbesondere Hersteller, Herkunftsland und Zutaten) gegen das echte Etikett prüfen, bevor der Entwurf aktiviert wird.
+</div>
+@endif
+
 {{-- ── EAN-Change form ── --}}
 <div class="card" style="margin-bottom:20px">
     <div class="card-header">🔖 EAN ändern (löst Versions-Rollover aus)</div>
@@ -202,6 +210,32 @@
                                value="{{ old("lmiv.{$key}", $d($key)) }}">
                     </div>
                 @endforeach
+
+                {{-- Mineral water section --}}
+                <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--c-border,#e5e7eb)">
+                    <p class="form-label" style="font-weight:600;margin-bottom:8px">💧 Mineralien (Mineralwasser)</p>
+                    @php
+                        $mineralFields = [
+                            'nw_natrium'          => 'Natrium (mg)',
+                            'nw_calcium'          => 'Calcium (mg)',
+                            'nw_magnesium'        => 'Magnesium (mg)',
+                            'nw_hydrogencarbonat' => 'Hydrogencarbonat (mg)',
+                            'nw_kalium'           => 'Kalium (mg)',
+                            'nw_chlorid'          => 'Chlorid (mg)',
+                            'nw_sulfat'           => 'Sulfat (mg)',
+                            'nw_fluorid'          => 'Fluorid (mg)',
+                            'nw_kieselsaeure'     => 'Kieselsäure (mg)',
+                        ];
+                    @endphp
+                    @foreach($mineralFields as $key => $label)
+                        <div class="form-group">
+                            <label class="form-label">{{ $label }}</label>
+                            <input type="number" name="lmiv[{{ $key }}]" class="form-control"
+                                   step="0.01" min="0"
+                                   value="{{ old("lmiv.{$key}", $d($key)) }}">
+                        </div>
+                    @endforeach
+                </div>
 
             </div>
         </div>

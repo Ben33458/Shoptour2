@@ -25,37 +25,16 @@
     </div>
 </div>
 
+{{-- Marke und Produktlinie ausgeblendet (vereinfachtes Produktmodell) --}}
+{{-- Hidden inputs preserve existing values for edit mode --}}
+@if($product?->brand_id)
+    <input type="hidden" name="brand_id" value="{{ $product->brand_id }}">
+@endif
+@if($product?->product_line_id)
+    <input type="hidden" name="product_line_id" value="{{ $product->product_line_id }}">
+@endif
+
 <div class="form-row">
-    <div class="form-group">
-        <label>Marke</label>
-        <select name="brand_id" id="brand_id">
-            <option value="">— keine —</option>
-            @foreach($brands as $brand)
-                <option value="{{ $brand->id }}"
-                    @selected(old('brand_id', $product?->brand_id) == $brand->id)>
-                    {{ $brand->name }}
-                </option>
-            @endforeach
-        </select>
-    </div>
-
-    <div class="form-group">
-        <label>Produktlinie</label>
-        <select name="product_line_id" id="product_line_id">
-            <option value="">— keine —</option>
-            @foreach($productLines as $pl)
-                <option value="{{ $pl->id }}"
-                    data-brand="{{ $pl->brand_id }}"
-                    data-gebinde="{{ $pl->gebinde_id }}"
-                    data-brand-name="{{ $pl->brand?->name }}"
-                    data-line-name="{{ $pl->name }}"
-                    @selected(old('product_line_id', $product?->product_line_id) == $pl->id)>
-                    {{ $pl->brand?->name ? $pl->brand->name . ' — ' : '' }}{{ $pl->name }}
-                </option>
-            @endforeach
-        </select>
-    </div>
-
     <div class="form-group">
         <label>Kategorie</label>
         <select name="category_id">
@@ -85,11 +64,44 @@
     </div>
 
     <div class="form-group">
+        <label>Einheiten im Gebinde</label>
+        <input type="number" name="gebinde_units" id="gebinde_units" min="1" max="9999" step="1"
+               value="{{ old('gebinde_units', $product?->gebinde_units) }}"
+               placeholder="z.B. 20">
+        <div class="hint">Anzahl Flaschen/Dosen. 1 = Einzelflasche.</div>
+    </div>
+
+    <div class="form-group">
+        <label>Inhalt/Einheit (L)</label>
+        <input type="text" name="unit_volume_l" id="unit_volume_l"
+               value="{{ old('unit_volume_l', $product?->unit_volume_ml ? number_format($product->unit_volume_ml / 1000, 3, ',', '') : '') }}"
+               placeholder="z.B. 0,500">
+        <div class="hint">Füllmenge einer Flasche/Dose in Liter.</div>
+    </div>
+
+    <div class="form-group">
+        <label>Gesamtinhalt (L) <span style="color:var(--c-muted);font-weight:normal;font-size:.8em">— auto-berechnet</span></label>
+        <input type="text" name="volume_l" id="volume_l"
+               value="{{ old('volume_l', $product?->volume_ml ? number_format($product->volume_ml / 1000, 3, ',', '') : '') }}"
+               placeholder="— aus Einheiten × Inhalt">
+        <div class="hint" id="gebinde_preview" style="color:var(--c-success);font-weight:500"></div>
+    </div>
+
+    <div class="form-group">
+        <label>Alkoholgehalt (% vol.)</label>
+        <input type="number" name="alkoholgehalt_vol_percent" min="0" max="100" step="0.1"
+               value="{{ old('alkoholgehalt_vol_percent', $product?->alkoholgehalt_vol_percent) }}"
+               placeholder="z.B. 5.0 oder 40.0">
+        <div class="hint">LMIV-Pflichtangabe ab 1,2 % vol. Leer lassen bei alkoholfreien Produkten.</div>
+    </div>
+
+    <div class="form-group">
         <label>Steuersatz</label>
-        <select name="tax_rate_id">
-            <option value="">— kein Steuersatz —</option>
+        <select name="tax_rate_id" id="tax_rate_select">
+            <option value="" data-factor="1.19">— kein Steuersatz —</option>
             @foreach($taxRates as $rate)
                 <option value="{{ $rate->id }}"
+                    data-factor="{{ 1 + $rate->rate_basis_points / 10000 }}"
                     @selected(old('tax_rate_id', $product?->tax_rate_id ?? $defaultTaxRateId ?? null) == $rate->id)>
                     {{ $rate->name }} ({{ number_format($rate->rate_basis_points / 100, 0) }} %)
                 </option>
@@ -101,11 +113,20 @@
 
 <div class="form-row">
     <div class="form-group">
-        <label>Netto-Preis (€) <span style="color:var(--c-danger)">*</span></label>
-        <input type="number" name="base_price_net_eur" step="0.01" min="0" required
-               value="{{ old('base_price_net_eur', $product ? number_format($product->base_price_net_milli / 1_000_000, 2, '.', '') : '') }}"
-               placeholder="0.00">
-        <div class="hint">Bruttopreis wird automatisch anhand des Steuersatzes berechnet.</div>
+        <label>Netto-VK-Preis (€)</label>
+        <input type="number" id="price_net_eur" name="base_price_net_eur" step="0.0001" min="0"
+               value="{{ old('base_price_net_eur', $product ? number_format($product->base_price_net_milli / 1_000_000, 4, '.', '') : '') }}"
+               placeholder="0.0000"
+               oninput="priceFromNet(this)">
+        <div class="hint">Netto eingeben → Brutto wird berechnet.</div>
+    </div>
+    <div class="form-group">
+        <label>Brutto-VK-Preis (€)</label>
+        <input type="number" id="price_gross_eur" name="base_price_gross_eur" step="0.01" min="0"
+               value="{{ old('base_price_gross_eur', $product ? number_format($product->base_price_gross_milli / 1_000_000, 2, '.', '') : '') }}"
+               placeholder="0.00"
+               oninput="priceFromGross(this)">
+        <div class="hint">Oder Brutto eingeben → Netto wird berechnet.</div>
     </div>
 
     <div class="form-group">
@@ -129,56 +150,73 @@
 
 <script>
 (function () {
-    const plSelect   = document.getElementById('product_line_id');
-    const brandSel   = document.getElementById('brand_id');
-    const gebindeSel = document.getElementById('gebinde_id');
-    const nameInput  = document.getElementById('produktname');
-
-    if (!plSelect) return;
-
-    plSelect.addEventListener('change', function () {
-        const opt = plSelect.options[plSelect.selectedIndex];
-
-        // Auto-fill Marke
-        const brandId = opt.dataset.brand;
-        if (brandId && brandSel) {
-            brandSel.value = brandId;
-            // Trigger cascading product-line filter if present
-            brandSel.dispatchEvent(new Event('change'));
+    var units  = document.getElementById('gebinde_units');
+    var unitL  = document.getElementById('unit_volume_l');
+    var volL   = document.getElementById('volume_l');
+    var prev   = document.getElementById('gebinde_preview');
+    if (!units || !unitL || !volL || !prev) return;
+    function parseL(val) {
+        return parseFloat((val || '').replace(',', '.')) || 0;
+    }
+    function fmtL(l) {
+        // Format with comma decimal, strip trailing zeros after 3 places
+        var s = l.toFixed(3).replace('.', ',');
+        return s.replace(/,?0+$/, '') || '0';
+    }
+    function update() {
+        var u = parseInt(units.value) || 0;
+        var l = parseL(unitL.value);
+        if (u > 0 && l > 0) {
+            var total = u * l;
+            volL.value = fmtL(total);
+            prev.textContent = u + ' × ' + fmtL(l) + ' L = ' + fmtL(total) + ' L';
+        } else {
+            prev.textContent = '';
         }
+    }
+    units.addEventListener('input', update);
+    unitL.addEventListener('input', update);
+    update();
+})();
 
-        // Auto-fill Gebinde (only if not already chosen by user)
-        const gebindeId = opt.dataset.gebinde;
-        if (gebindeId && gebindeSel && !gebindeSel.value) {
-            gebindeSel.value = gebindeId;
+// ── Netto / Brutto mutual calculation ─────────────────────────────────────────
+(function () {
+    var netInput   = document.getElementById('price_net_eur');
+    var grossInput = document.getElementById('price_gross_eur');
+    var taxSel     = document.getElementById('tax_rate_select');
+    if (!netInput || !grossInput || !taxSel) return;
+
+    function getFactor() {
+        var opt = taxSel.options[taxSel.selectedIndex];
+        return parseFloat(opt?.dataset?.factor || 1.19);
+    }
+
+    window.priceFromNet = function (el) {
+        var net = parseFloat(el.value);
+        if (!isNaN(net) && net > 0) {
+            grossInput.value = (net * getFactor()).toFixed(2);
+        } else {
+            grossInput.value = '';
         }
+    };
 
-        // Auto-generate Produktname if field is still empty
-        if (nameInput && !nameInput.value.trim()) {
-            const brandName = opt.dataset.brandName || '';
-            const lineName  = opt.dataset.lineName  || '';
-            nameInput.value = brandName
-                ? brandName + ' ' + lineName
-                : lineName;
+    window.priceFromGross = function (el) {
+        var gross = parseFloat(el.value);
+        if (!isNaN(gross) && gross > 0) {
+            netInput.value = (gross / getFactor()).toFixed(4);
+        } else {
+            netInput.value = '';
+        }
+    };
+
+    // When tax rate changes, recalculate gross from net (net is the source of truth)
+    taxSel.addEventListener('change', function () {
+        if (netInput.value) {
+            priceFromNet(netInput);
+        } else if (grossInput.value) {
+            priceFromGross(grossInput);
         }
     });
-
-    // Filter product-line options by brand when brand changes
-    if (brandSel) {
-        brandSel.addEventListener('change', function () {
-            const selectedBrand = brandSel.value;
-            Array.from(plSelect.options).forEach(function (o) {
-                if (!o.value) return; // keep "— keine —"
-                o.hidden = selectedBrand ? (o.dataset.brand !== selectedBrand) : false;
-            });
-            // Reset product line if it no longer matches
-            if (selectedBrand && plSelect.value) {
-                const cur = plSelect.options[plSelect.selectedIndex];
-                if (cur && cur.dataset.brand !== selectedBrand) {
-                    plSelect.value = '';
-                }
-            }
-        });
-    }
 })();
 </script>
+

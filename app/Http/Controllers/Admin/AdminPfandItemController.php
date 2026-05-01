@@ -6,6 +6,7 @@ use App\Models\Catalog\PfandItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\View\View;
 
 class AdminPfandItemController extends Controller
@@ -64,5 +65,13 @@ class AdminPfandItemController extends Controller
     {
         $pfandItem->delete();
         return back()->with('success', 'Pfandposition gelöscht.');
+    }
+
+    public function import(): RedirectResponse
+    {
+        Artisan::call('wawi:import-pfand');
+        $output = Artisan::output();
+        return redirect()->route('admin.pfand-items.index')
+            ->with('success', 'Pfand-Import abgeschlossen.' . ($output ? ' ' . trim($output) : ''));
     }
 }

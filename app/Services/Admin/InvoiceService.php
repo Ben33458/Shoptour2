@@ -114,7 +114,7 @@ class InvoiceService
                     'qty'                     => $qty,
                     'unit_price_net_milli'    => $orderItem->unit_price_net_milli,
                     'unit_price_gross_milli'  => $orderItem->unit_price_gross_milli,
-                    'tax_rate_basis_points'   => $orderItem->tax_rate_basis_points ?? 190_000,
+                    'tax_rate_basis_points'   => $orderItem->tax_rate_basis_points ?? 1_900,
                     'line_total_net_milli'    => $lineTotalNetMilli,
                     'line_total_gross_milli'  => $lineTotalGrossMilli,
                     // WP-16: snapshot unit purchase price for margin reporting
@@ -255,11 +255,24 @@ class InvoiceService
                 if ($customer?->email) {
                     Mail::to($customer->email)
                         ->send(new \App\Mail\InvoiceAvailable($invoice));
+
+                    $this->auditLog->log('invoice.mail.sent', $invoice, [
+                        'invoice_number' => $invoice->invoice_number,
+                        'recipient'      => $customer->email,
+                        'customer_nr'    => $customer->customer_number,
+                    ]);
                 }
             } catch (\Throwable $e) {
                 Log::error('InvoiceAvailable mail failed for invoice ' . $invoice->id, [
                     'error' => $e->getMessage(),
                 ]);
+
+                $this->auditLog->log('invoice.mail.failed', $invoice, [
+                    'invoice_number' => $invoice->invoice_number ?? null,
+                    'recipient'      => $customer?->email,
+                    'customer_nr'    => $customer?->customer_number,
+                    'error'          => $e->getMessage(),
+                ], level: 'error');
             }
 
             return $invoice;

@@ -66,6 +66,10 @@ class StockMovement extends Model
         'reference_id',
         'note',
         'created_by_user_id',
+        'korrekturgrund',
+        'bestandsaufnahme_session_id',
+        'mhd_batch_id',
+        'employee_id',
     ];
 
     /**

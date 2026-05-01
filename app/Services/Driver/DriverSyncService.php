@@ -6,11 +6,18 @@ namespace App\Services\Driver;
 
 use App\Models\Catalog\Product;
 use App\Models\Delivery\FulfillmentEvent;
+use App\Models\Delivery\Tour;
 use App\Models\Delivery\TourStop;
+use App\Models\Driver\CashRegister;
+use App\Models\Driver\CashTransaction;
 use App\Models\Driver\DriverEvent;
+use App\Models\Driver\DriverSetting;
 use App\Models\Driver\DriverUpload;
+use App\Models\Orders\Order;
 use App\Models\Orders\OrderItem;
 use App\Services\Delivery\FulfillmentService;
+use App\Services\Rental\ReturnSlipService;
+use App\Services\Rental\VollgutReturnService;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -36,7 +43,9 @@ use Throwable;
 class DriverSyncService
 {
     public function __construct(
-        private readonly FulfillmentService $fulfillmentService,
+        private readonly FulfillmentService  $fulfillmentService,
+        private readonly ReturnSlipService   $returnSlipService,
+        private readonly VollgutReturnService $vollgutReturnService,
     ) {}
 
     // =========================================================================
@@ -223,6 +232,14 @@ class DriverSyncService
             DriverEvent::TYPE_NOTE                 => $this->handleNote($driverEvent),
             DriverEvent::TYPE_UPLOAD_REQUESTED     => $this->handleUploadRequested($driverEvent, $eventData),
             DriverEvent::TYPE_UPLOAD               => $this->handleUpload($driverEvent),
+            DriverEvent::TYPE_TOUR_START           => $this->handleTourStart($driverEvent),
+            DriverEvent::TYPE_TOUR_END             => $this->handleTourEnd($driverEvent),
+            DriverEvent::TYPE_DEPART               => $this->handleDepart($driverEvent),
+            DriverEvent::TYPE_CASH_TRANSACTION     => $this->handleCashTransaction($driverEvent),
+            DriverEvent::TYPE_LEERGUTAUSGLEICH     => $this->handleLeergutausgleich($driverEvent),
+            DriverEvent::TYPE_RENTAL_RETURN        => $this->handleRentalReturn($driverEvent),
+            DriverEvent::TYPE_VOLLGUT_KASTEN       => $this->handleVollgutKasten($driverEvent),
+            DriverEvent::TYPE_VOLLGUT_FASS         => $this->handleVollgutFass($driverEvent),
             default => throw new \InvalidArgumentException(
                 "Unknown event_type: '{$driverEvent->event_type}'."
             ),
@@ -459,8 +476,295 @@ class DriverSyncService
     }
 
     // =========================================================================
+    // New handlers: tour lifecycle, cash, leergut
+    // =========================================================================
+
+    private function handleTourStart(DriverEvent $event): void
+    {
+        $tour = $this->requireTour($event);
+
+        $tour->update([
+            'status'     => Tour::STATUS_IN_PROGRESS,
+            'started_at' => $event->received_at ?? now(),
+        ]);
+    }
+
+    private function handleTourEnd(DriverEvent $event): void
+    {
+        $tour = $this->requireTour($event);
+
+        $tour->update([
+            'status'   => Tour::STATUS_DONE,
+            'ended_at' => $event->received_at ?? now(),
+        ]);
+    }
+
+    private function handleDepart(DriverEvent $event): void
+    {
+        $stop = $this->requireTourStop($event);
+
+        $stop->update(['departed_at' => $event->received_at ?? now()]);
+    }
+
+    private function handleCashTransaction(DriverEvent $event): void
+    {
+        $registerId  = (int) ($event->payload_json['cash_register_id'] ?? 0);
+        $type        = (string) ($event->payload_json['type'] ?? '');
+        $amountCents = (int) ($event->payload_json['amount_cents'] ?? 0);
+        $note        = (string) ($event->payload_json['note'] ?? '');
+
+        if ($registerId <= 0) {
+            throw new \InvalidArgumentException('cash_transaction: payload.cash_register_id required.');
+        }
+        if (! in_array($type, [CashTransaction::TYPE_WITHDRAWAL, CashTransaction::TYPE_DEPOSIT], true)) {
+            throw new \InvalidArgumentException('cash_transaction: payload.type must be withdrawal or deposit.');
+        }
+        if ($amountCents <= 0) {
+            throw new \InvalidArgumentException('cash_transaction: payload.amount_cents must be > 0.');
+        }
+
+        $register = CashRegister::find($registerId);
+        if (! $register) {
+            throw new \RuntimeException("CashRegister #{$registerId} not found.");
+        }
+
+        CashTransaction::create([
+            'cash_register_id' => $registerId,
+            'employee_id'      => $event->employee_id,
+            'tour_id'          => $event->tour_id,
+            'type'             => $type,
+            'amount_cents'     => $amountCents,
+            'note'             => $note ?: null,
+        ]);
+    }
+
+    /**
+     * Leergutausgleich: add leergut order-items for all delivered items.
+     *
+     * payload:
+     *   order_id  (int)
+     *   items     array of { wawi_artikel_id: int, qty: int, leergut_name: string,
+     *                         unit_price_net_milli: int, unit_price_gross_milli: int }
+     */
+    private function handleLeergutausgleich(DriverEvent $event): void
+    {
+        $orderId = (int) ($event->payload_json['order_id'] ?? $event->order_id ?? 0);
+        $items   = (array) ($event->payload_json['items'] ?? []);
+
+        if ($orderId <= 0) {
+            throw new \InvalidArgumentException('leergutausgleich: payload.order_id required.');
+        }
+        if (empty($items)) {
+            throw new \InvalidArgumentException('leergutausgleich: payload.items must not be empty.');
+        }
+
+        $order = Order::find($orderId);
+        if (! $order) {
+            throw new \RuntimeException("Order #{$orderId} not found.");
+        }
+
+        foreach ($items as $item) {
+            $qty  = (int) ($item['qty'] ?? 0);
+            $name = (string) ($item['leergut_name'] ?? 'Leergut');
+            $netMilli   = (int) ($item['unit_price_net_milli']   ?? 0);
+            $grossMilli = (int) ($item['unit_price_gross_milli'] ?? 0);
+
+            if ($qty <= 0) {
+                continue;
+            }
+
+            // Leergut price is negative (credit for returned empties)
+            $order->items()->create([
+                'product_id'              => null,
+                'product_name_snapshot'   => $name,
+                'artikelnummer_snapshot'  => (string) ($item['wawi_artikel_nr'] ?? ''),
+                'qty'                     => $qty,
+                'unit_price_net_milli'    => $netMilli,   // negative or zero
+                'unit_price_gross_milli'  => $grossMilli, // negative or zero
+                'unit_deposit_milli'      => 0,
+                'tax_rate_percent'        => (int) ($item['tax_rate_percent'] ?? 19),
+            ]);
+        }
+    }
+
+    /**
+     * rental_return: driver records that rental items have been returned.
+     *
+     * payload:
+     *   order_id       (int)
+     *   location       (string, optional)  e.g. "Beim Kunden"
+     *   items          array of {
+     *     rental_booking_item_id (int),
+     *     returned_quantity      (int),
+     *     clean_status           (string: clean|dirty),
+     *     damage_status          (string: none|damaged|not_rentable|damaged_but_still_rentable),
+     *   }
+     */
+    private function handleRentalReturn(DriverEvent $event): void
+    {
+        $orderId  = (int) ($event->payload_json['order_id'] ?? $event->order_id ?? 0);
+        $items    = (array) ($event->payload_json['items'] ?? []);
+        $location = (string) ($event->payload_json['location'] ?? 'Fahrer-Rückgabe');
+
+        if ($orderId <= 0) {
+            throw new \InvalidArgumentException('rental_return: payload.order_id required.');
+        }
+        if (empty($items)) {
+            throw new \InvalidArgumentException('rental_return: payload.items must not be empty.');
+        }
+
+        $order = Order::find($orderId);
+        if ($order === null) {
+            throw new \RuntimeException("Order #{$orderId} not found.");
+        }
+
+        // Get or create the return slip for this order
+        $slip = $order->returnSlip ?? $this->returnSlipService->createForOrder($order, $event->employee_id);
+        if ($location !== '' && $slip->location === null) {
+            $slip->update(['location' => $location]);
+        }
+
+        foreach ($items as $itemData) {
+            $bookingItemId   = (int) ($itemData['rental_booking_item_id'] ?? 0);
+            $returnedQty     = (int) ($itemData['returned_quantity'] ?? 0);
+            $cleanStatus     = (string) ($itemData['clean_status'] ?? 'clean');
+            $damageStatus    = (string) ($itemData['damage_status'] ?? 'none');
+
+            if ($bookingItemId <= 0 || $returnedQty <= 0) {
+                continue;
+            }
+
+            $bookingItem = \App\Models\Rental\RentalBookingItem::find($bookingItemId);
+            if ($bookingItem === null) {
+                throw new \RuntimeException("RentalBookingItem #{$bookingItemId} not found.");
+            }
+
+            $this->returnSlipService->recordReturn(
+                slip:             $slip,
+                bookingItem:      $bookingItem,
+                returnedQuantity: $returnedQty,
+                cleanStatus:      $cleanStatus,
+                damageStatus:     $damageStatus,
+            );
+        }
+    }
+
+    /**
+     * vollgut_kasten: driver records Vollgut Kasten returns from customer.
+     *
+     * payload:
+     *   customer_id    (int)
+     *   order_id       (int, optional)
+     *   article_id     (int)   the original drink article
+     *   quantity       (int)   number of Kästen returned
+     *   best_before_date (string: YYYY-MM-DD)
+     */
+    private function handleVollgutKasten(DriverEvent $event): void
+    {
+        $customerId = (int) ($event->payload_json['customer_id'] ?? 0);
+        $orderId    = isset($event->payload_json['order_id']) ? (int) $event->payload_json['order_id'] : null;
+        $articleId  = (int) ($event->payload_json['article_id'] ?? 0);
+        $quantity   = (int) ($event->payload_json['quantity'] ?? 0);
+        $bestBefore = (string) ($event->payload_json['best_before_date'] ?? '');
+
+        if ($customerId <= 0) {
+            throw new \InvalidArgumentException('vollgut_kasten: payload.customer_id required.');
+        }
+        if ($articleId <= 0) {
+            throw new \InvalidArgumentException('vollgut_kasten: payload.article_id required.');
+        }
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('vollgut_kasten: payload.quantity must be > 0.');
+        }
+        if ($bestBefore === '') {
+            throw new \InvalidArgumentException('vollgut_kasten: payload.best_before_date required.');
+        }
+
+        $customer = \App\Models\Pricing\Customer::find($customerId);
+        if ($customer === null) {
+            throw new \RuntimeException("Customer #{$customerId} not found.");
+        }
+
+        $this->vollgutReturnService->returnKaesten(
+            customer:     $customer,
+            items:        [[
+                'article_id'       => $articleId,
+                'quantity'         => $quantity,
+                'best_before_date' => $bestBefore,
+            ]],
+            orderId:      $orderId,
+            driverUserId: $event->employee_id,
+        );
+    }
+
+    /**
+     * vollgut_fass: driver records Vollgut Fass returns from customer.
+     *
+     * payload:
+     *   customer_id      (int)
+     *   order_id         (int, optional)
+     *   article_id       (int)   the original keg article
+     *   quantity         (int)   number of Fässer returned
+     *   is_full          (bool)  barrels must be full
+     *   best_before_date (string: YYYY-MM-DD)
+     */
+    private function handleVollgutFass(DriverEvent $event): void
+    {
+        $customerId = (int) ($event->payload_json['customer_id'] ?? 0);
+        $orderId    = isset($event->payload_json['order_id']) ? (int) $event->payload_json['order_id'] : null;
+        $articleId  = (int) ($event->payload_json['article_id'] ?? 0);
+        $quantity   = (int) ($event->payload_json['quantity'] ?? 0);
+        $isFull     = (bool) ($event->payload_json['is_full'] ?? false);
+        $bestBefore = (string) ($event->payload_json['best_before_date'] ?? '');
+
+        if ($customerId <= 0) {
+            throw new \InvalidArgumentException('vollgut_fass: payload.customer_id required.');
+        }
+        if ($articleId <= 0) {
+            throw new \InvalidArgumentException('vollgut_fass: payload.article_id required.');
+        }
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('vollgut_fass: payload.quantity must be > 0.');
+        }
+
+        $customer = \App\Models\Pricing\Customer::find($customerId);
+        if ($customer === null) {
+            throw new \RuntimeException("Customer #{$customerId} not found.");
+        }
+
+        $this->vollgutReturnService->returnFaesser(
+            customer:     $customer,
+            items:        [[
+                'article_id'       => $articleId,
+                'quantity'         => $quantity,
+                'is_full'          => $isFull,
+                'best_before_date' => $bestBefore,
+            ]],
+            orderId:      $orderId,
+            driverUserId: $event->employee_id,
+        );
+    }
+
+    // =========================================================================
     // Helpers — entity resolution
     // =========================================================================
+
+    private function requireTour(DriverEvent $event): Tour
+    {
+        if ($event->tour_id === null) {
+            throw new \InvalidArgumentException(
+                "Event type '{$event->event_type}' requires tour_id."
+            );
+        }
+
+        $tour = Tour::find($event->tour_id);
+
+        if ($tour === null) {
+            throw new \RuntimeException("Tour #{$event->tour_id} not found.");
+        }
+
+        return $tour;
+    }
 
     private function requireTourStop(DriverEvent $event): TourStop
     {

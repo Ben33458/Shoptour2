@@ -27,6 +27,9 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 class Contact extends Model
 {
     protected $fillable = [
+        'ninox_id',
+        'contactable_type',
+        'contactable_id',
         'name',
         'phone',
         'email',

@@ -1,20 +1,48 @@
-<!DOCTYPE html>
-<html lang="de">
-<head><meta charset="UTF-8"><title>Auftragsbestätigung</title></head>
-<body style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<x-mail::message>
 
-<h2>Auftragsbestätigung</h2>
+Sehr geehrte Damen und Herren,
 
-<p>Sehr geehrte Damen und Herren,</p>
+vielen Dank für Ihren Auftrag **#{{ $order->order_number ?? $order->id }}**! Wir haben Ihre Bestellung erfolgreich erhalten und werden diese schnellstmöglich bearbeiten.
 
-<p>
-    Ihr Auftrag <strong>#{{ $order->id }}</strong>
-    wurde erfolgreich erfasst.
-</p>
+@if($order->items && $order->items->isNotEmpty())
+## Getränke & Produkte
 
-<p>Wir werden Sie kontaktieren, sobald Ihr Auftrag bearbeitet wurde.</p>
+<x-mail::table>
+| Artikel | Menge | Preis (netto) |
+|:---|---:|---:|
+@foreach($order->items as $item)
+| {{ $item->product?->produktname ?? $item->product_name ?? '–' }} | {{ $item->qty ?? $item->quantity }} | {{ number_format($item->totalNetMilli() / 1_000_000, 2, ',', '.') }} € |
+@endforeach
+</x-mail::table>
+@endif
 
-<p>Mit freundlichen Gr\u00fc\u00dfen</p>
+@if($order->rentalBookingItems && $order->rentalBookingItems->isNotEmpty())
+## Leihartikel
 
-</body>
-</html>
+@if($order->desired_delivery_date || $order->desired_pickup_date)
+Zeitraum: {{ $order->desired_delivery_date ? \Carbon\Carbon::parse($order->desired_delivery_date)->format('d.m.Y') : '–' }} bis {{ $order->desired_pickup_date ? \Carbon\Carbon::parse($order->desired_pickup_date)->format('d.m.Y') : '–' }}
+@endif
+
+<x-mail::table>
+| Artikel | Menge | Preis (netto) |
+|:---|---:|---:|
+@foreach($order->rentalBookingItems as $item)
+| {{ $item->rentalItem?->name ?? '–' }} | {{ $item->quantity }} | {{ number_format($item->total_price_net_milli / 1_000_000, 2, ',', '.') }} € |
+@endforeach
+</x-mail::table>
+
+@if($order->event_location_name)
+Veranstaltungsort: {{ $order->event_location_name }}@if($order->event_location_street), {{ $order->event_location_street }}@endif@if($order->event_location_zip || $order->event_location_city), {{ $order->event_location_zip }} {{ $order->event_location_city }}@endif
+@endif
+@endif
+
+@if($order->total_net_milli)
+**Gesamtbetrag (netto): {{ number_format($order->total_net_milli / 1_000_000, 2, ',', '.') }} €**
+@endif
+
+Bei Fragen stehen wir Ihnen gerne zur Verfügung.
+
+Mit freundlichen Grüßen,
+{{ config('app.name') }}
+
+</x-mail::message>

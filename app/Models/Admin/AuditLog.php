@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models\Admin;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Append-only admin audit trail.
@@ -29,6 +31,7 @@ class AuditLog extends Model
         'company_id',
         'token_id',
         'action',
+        'level',
         'subject_type',
         'subject_id',
         'meta_json',
@@ -39,6 +42,11 @@ class AuditLog extends Model
         'meta_json'  => 'array',
         'created_at' => 'datetime',
     ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 
     protected static function booted(): void
     {

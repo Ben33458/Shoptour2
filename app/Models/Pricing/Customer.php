@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace App\Models\Pricing;
 
 use App\Models\Address;
+use App\Models\Admin\LexofficeVoucher;
+use App\Models\Communications\Communication;
 use App\Models\Contact;
+use App\Models\CustomerFavorite;
+use App\Models\Debtor\DebtorNote;
+use App\Models\SubUser;
 use App\Models\Orders\Order;
 use App\Models\Pricing\CustomerNote;
 use Illuminate\Database\Eloquent\Collection;
@@ -48,6 +53,16 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  */
 class Customer extends Model
 {
+    // Lieferfreigabe delivery_status values
+    public const DELIVERY_NORMAL  = 'normal';
+    public const DELIVERY_WARNING = 'warning';
+    public const DELIVERY_BLOCKED = 'blocked';
+
+    // Optional payment condition hints
+    public const CONDITION_CASH_ONLY  = 'cash_only';
+    public const CONDITION_PREPAYMENT = 'prepayment';
+    public const CONDITION_STOP_CHECK = 'stop_check';
+
     protected $fillable = [
         'company_id',
         'user_id',
@@ -55,7 +70,10 @@ class Customer extends Model
         'customer_number',
         'company_name',
         'lexoffice_contact_id',
+        'ninox_kunden_id',
+        'wawi_kunden_id',
         'price_display_mode',
+        'display_preferences',
         'first_name',
         'last_name',
         'email',
@@ -63,10 +81,27 @@ class Customer extends Model
         'delivery_address_text',
         'delivery_note',
         'active',
+        'billing_email',
+        'notification_email',
+        'email_notification_shipping',
+        'newsletter_consent',
+        // Debtor / Lieferfreigabe fields
+        'delivery_status',
+        'delivery_condition',
+        'delivery_status_note',
+        'delivery_status_set_by',
+        'debt_hold',
+        'debt_hold_reason',
+        'kunde_von',
+        'birth_date',
     ];
 
     protected $casts = [
-        'active' => 'boolean',
+        'active'                      => 'boolean',
+        'email_notification_shipping' => 'boolean',
+        'debt_hold'                   => 'boolean',
+        'display_preferences'         => 'array',
+        'birth_date'                  => 'date',
     ];
 
     // -------------------------------------------------------------------------
@@ -127,9 +162,27 @@ class Customer extends Model
         return $this->morphMany(Contact::class, 'contactable')->orderBy('sort_order');
     }
 
+    /**
+     * All communications linked to this customer.
+     */
+    public function communications(): MorphMany
+    {
+        return $this->morphMany(Communication::class, 'communicable')->orderByDesc('received_at');
+    }
+
     // -------------------------------------------------------------------------
     // Address relations (WP-21)
     // -------------------------------------------------------------------------
+
+    public function subUsers(): HasMany
+    {
+        return $this->hasMany(SubUser::class, 'parent_customer_id')->with('user');
+    }
+
+    public function favorites(): HasMany
+    {
+        return $this->hasMany(CustomerFavorite::class)->orderBy('sort_order');
+    }
 
     public function addresses(): HasMany
     {
@@ -154,5 +207,74 @@ class Customer extends Model
     public function defaultBillingAddress(): HasOne
     {
         return $this->hasOne(Address::class)->where('type', 'billing')->where('is_default', true);
+    }
+
+    // ── Debtor / Mahnwesen ───────────────────────────────────────────────────
+
+    /** All Lexoffice vouchers (invoices) linked to this customer. */
+    public function lexofficeVouchers(): HasMany
+    {
+        return $this->hasMany(LexofficeVoucher::class);
+    }
+
+    /** Open/overdue sales invoices (offene Posten). */
+    public function openVouchers(): HasMany
+    {
+        return $this->hasMany(LexofficeVoucher::class)
+            ->whereIn('voucher_type', [LexofficeVoucher::TYPE_SALES_INVOICE])
+            ->whereIn('voucher_status', [LexofficeVoucher::STATUS_OPEN, LexofficeVoucher::STATUS_OVERDUE]);
+    }
+
+    /** Debtor notes (Notizen, Aufgaben, Zahlungszusagen, Klärfälle). */
+    public function debtorNotes(): HasMany
+    {
+        return $this->hasMany(DebtorNote::class)->orderByDesc('created_at');
+    }
+
+    /** Open debtor notes only. */
+    public function openDebtorNotes(): HasMany
+    {
+        return $this->hasMany(DebtorNote::class)
+            ->where('status', DebtorNote::STATUS_OPEN)
+            ->orderByDesc('created_at');
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** Is this a B2B (commercial) customer? */
+    public function isB2B(): bool
+    {
+        return ! empty($this->company_name);
+    }
+
+    /** Display name for lists. */
+    public function displayName(): string
+    {
+        if ($this->company_name) {
+            return $this->company_name;
+        }
+
+        return trim(($this->first_name ?? '') . ' ' . ($this->last_name ?? '')) ?: $this->customer_number;
+    }
+
+    /** True when this customer originally came from Getränke Kehr. */
+    public function isKehr(): bool
+    {
+        return $this->kunde_von === 'kehr';
+    }
+
+    /** Is delivery blocked or warned? */
+    public function isDeliveryBlocked(): bool
+    {
+        return $this->delivery_status === self::DELIVERY_BLOCKED;
+    }
+
+    public function deliveryStatusLabel(): string
+    {
+        return match ($this->delivery_status ?? self::DELIVERY_NORMAL) {
+            self::DELIVERY_WARNING => 'Warnhinweis',
+            self::DELIVERY_BLOCKED => 'Liefersperre',
+            default                => 'Freigegeben',
+        };
     }
 }

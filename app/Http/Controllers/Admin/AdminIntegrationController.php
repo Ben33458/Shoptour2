@@ -10,6 +10,8 @@ use App\Models\Admin\LexofficeVoucher;
 use App\Models\Pricing\AppSetting;
 use App\Models\Pricing\Customer;
 use App\Models\Supplier\Supplier;
+use App\Models\Integrations\LexofficeImportRun;
+use App\Services\Integrations\LexofficeImport;
 use App\Services\Integrations\LexofficePull;
 use App\Services\Integrations\LexofficeSync;
 use Illuminate\Http\RedirectResponse;
@@ -25,11 +27,6 @@ class AdminIntegrationController extends Controller
      */
     public function lexofficeIndex(): View
     {
-        $settings = [
-            'enabled' => AppSetting::get('lexoffice.enabled', '0') === '1',
-            'api_key' => AppSetting::get('lexoffice.api_key', ''),
-        ];
-
         // Show the 10 most recently synced/failed invoices for status overview
         $recentInvoices = Invoice::whereNotNull('lexoffice_synced_at')
             ->orWhereNotNull('lexoffice_sync_error')
@@ -37,7 +34,9 @@ class AdminIntegrationController extends Controller
             ->limit(10)
             ->get();
 
-        return view('admin.integrations.lexoffice', compact('settings', 'recentInvoices'));
+        $lastImportRun = LexofficeImportRun::latest('created_at')->first();
+
+        return view('admin.integrations.lexoffice', compact('recentInvoices', 'lastImportRun'));
     }
 
     /**
@@ -121,11 +120,28 @@ class AdminIntegrationController extends Controller
     }
 
     /**
-     * Pull all vouchers (invoices, credit notes) from Lexoffice.
+     * Run the same incremental sync as the hourly cron job (contacts + vouchers).
+     * Fires the artisan command in the background to avoid gateway timeouts.
+     */
+    public function lexofficeRunSync(): RedirectResponse
+    {
+        $artisan = base_path('artisan');
+        $log     = storage_path('logs/lexoffice-sync-manual.log');
+
+        exec("php {$artisan} lexoffice:sync >> {$log} 2>&1 &");
+
+        return back()->with('success',
+            'Sync gestartet — läuft im Hintergrund. Ergebnis in storage/logs/lexoffice-sync-manual.log.'
+        );
+    }
+
+    /**
+     * Pull all vouchers from Lexoffice.
      */
     public function lexofficePullVouchers(): RedirectResponse
     {
         set_time_limit(300);
+        ignore_user_abort(true); // keep running even if the gateway proxy times out
 
         $companyId = App::make('current_company')?->id;
 
@@ -145,6 +161,72 @@ class AdminIntegrationController extends Controller
      * Delete all Lexoffice-imported customers, suppliers, vouchers and blocks
      * so a clean re-import can be performed.
      */
+    /**
+     * POST /admin/integrations/lexoffice/import-all
+     * Imports ALL Lexoffice data into lexoffice_* tables only.
+     * Does NOT modify Shoptour domain tables.
+     */
+    public function lexofficeImportAll(): RedirectResponse
+    {
+        set_time_limit(300);
+
+        $run = LexofficeImportRun::create([
+            'status'     => LexofficeImportRun::STATUS_RUNNING,
+            'started_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        try {
+            $stats = app(LexofficeImport::class)->importAll(null);
+
+            $run->update([
+                'status'      => LexofficeImportRun::STATUS_DONE,
+                'finished_at' => now(),
+                'result_json' => $stats,
+            ]);
+
+            $c   = $stats['contacts'];
+            $v   = $stats['vouchers'];
+            $a   = $stats['articles'];
+            $msg = sprintf(
+                'Import abgeschlossen — Kontakte: %d neu, %d aktualisiert | Belege: %d neu, %d aktualisiert | Artikel: %d neu, %d aktualisiert | weitere Ressourcen importiert.',
+                $c['created'], $c['updated'],
+                $v['created'], $v['updated'],
+                $a['created'], $a['updated'],
+            );
+        } catch (\Throwable $e) {
+            $run->update([
+                'status'        => LexofficeImportRun::STATUS_FAILED,
+                'finished_at'   => now(),
+                'error_message' => $e->getMessage(),
+            ]);
+            $msg = 'Import fehlgeschlagen: ' . $e->getMessage();
+        }
+
+        return back()->with('success', $msg);
+    }
+
+    /**
+     * POST /admin/integrations/lexoffice/reconcile
+     * Links lexoffice_contacts to local customers/suppliers.
+     * Creates new records for unmatched contacts.
+     */
+    public function lexofficeReconcile(): RedirectResponse
+    {
+        set_time_limit(300);
+        $stats = app(LexofficeImport::class)->reconcileContacts(null, createMissing: true);
+
+        $msg = sprintf(
+            'Abgleich abgeschlossen — Kunden: %d verknüpft, %d neu erstellt | Lieferanten: %d verknüpft, %d neu erstellt.',
+            $stats['matched_customers'],
+            $stats['created_customers'],
+            $stats['matched_suppliers'],
+            $stats['created_suppliers'],
+        );
+
+        return back()->with('success', $msg);
+    }
+
     public function lexofficeResetImported(): RedirectResponse
     {
         DB::table('customer_notes')
@@ -170,6 +252,37 @@ class AdminIntegrationController extends Controller
         $msg = "Zurückgesetzt: {$customers} Kunden, {$suppliers} Lieferanten und alle Belege gelöscht. Bereit für neuen Import.";
 
         return redirect()->route('admin.integrations.lexoffice')->with('success', $msg);
+    }
+
+    /**
+     * POST /admin/integrations/lexoffice/import-payments
+     * Fetches payment history for all non-draft/non-voided vouchers from Lexoffice
+     * and stores individual payment records in lexoffice_payments.
+     */
+    public function lexofficeImportPayments(): RedirectResponse
+    {
+        set_time_limit(120);
+
+        // Process 30 vouchers per click (~18 s) to stay within gateway timeout.
+        // Re-click until remaining = 0. For a full run use: php artisan lexoffice:import-payments
+        $stats = app(LexofficeImport::class)->importPayments(null, limit: 30);
+
+        $msg = sprintf(
+            'Zahlungen: %d verarbeitet — %d neu, %d aktualisiert, %d ohne Zahlung, %d Fehler.',
+            $stats['processed'],
+            $stats['created'],
+            $stats['updated'],
+            $stats['skipped'],
+            $stats['errors'],
+        );
+
+        if ($stats['remaining'] > 0) {
+            $msg .= sprintf(' Noch %d Belege ausstehend — Button erneut klicken.', $stats['remaining']);
+        } else {
+            $msg .= ' Alle Belege abgerufen.';
+        }
+
+        return back()->with('success', $msg);
     }
 
     /**

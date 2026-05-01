@@ -38,7 +38,7 @@
         {{-- Errors --}}
         @if ($errors->any())
             <div class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-                {{ $errors->first() }}
+                {!! $errors->first() !!}
             </div>
         @endif
 
@@ -134,10 +134,16 @@
             </button>
         </form>
 
-        <p class="text-center text-sm text-gray-500 mt-6">
-            Bereits ein Konto?
-            <a href="{{ route('login') }}" class="text-amber-600 hover:underline font-medium">Anmelden</a>
-        </p>
+        <div class="mt-6 pt-4 border-t border-gray-100 space-y-2 text-center">
+            <p class="text-sm text-gray-500">
+                Bereits ein Konto?
+                <a href="{{ route('login') }}" class="text-amber-600 hover:underline font-medium">Anmelden</a>
+            </p>
+            <p class="text-sm text-gray-500">
+                Bestehender Kunde?
+                <a href="{{ route('activation.show') }}" class="text-amber-600 hover:underline font-medium">Kundenkonto aktivieren</a>
+            </p>
+        </div>
     </div>
 </div>
 

@@ -84,10 +84,16 @@
             </button>
         </form>
 
-        <p class="text-center text-sm text-gray-500 mt-6">
-            Noch kein Konto?
-            <a href="{{ route('register') }}" class="text-amber-600 hover:underline font-medium">Registrieren</a>
-        </p>
+        <div class="mt-6 pt-4 border-t border-gray-100 space-y-2 text-center">
+            <p class="text-sm text-gray-500">
+                Noch kein Konto?
+                <a href="{{ route('register') }}" class="text-amber-600 hover:underline font-medium">Registrieren</a>
+            </p>
+            <p class="text-sm text-gray-500">
+                Bestehender Kunde?
+                <a href="{{ route('activation.show') }}" class="text-amber-600 hover:underline font-medium">Kundenkonto aktivieren</a>
+            </p>
+        </div>
     </div>
 </div>
 

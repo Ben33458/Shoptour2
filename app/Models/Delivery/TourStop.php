@@ -54,6 +54,7 @@ class TourStop extends Model
         'status',
         'arrived_at',
         'finished_at',
+        'departed_at',
     ];
 
     /**
@@ -63,6 +64,7 @@ class TourStop extends Model
         'stop_index'  => 'integer',
         'arrived_at'  => 'datetime',
         'finished_at' => 'datetime',
+        'departed_at' => 'datetime',
     ];
 
     // -------------------------------------------------------------------------

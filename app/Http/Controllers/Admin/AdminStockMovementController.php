@@ -22,11 +22,12 @@ class AdminStockMovementController extends Controller
     {
         $warehouseId  = $request->integer('warehouse_id') ?: null;
         $movementType = $request->string('type')->toString() ?: null;
+        $date         = $request->string('date')->toString() ?: null;
 
         $query = StockMovement::with([
             'product:id,artikelnummer,produktname',
             'warehouse:id,name',
-            'createdBy:id,name',
+            'createdBy:id,first_name,last_name',
         ])->orderByDesc('created_at');
 
         if ($warehouseId) {
@@ -37,12 +38,16 @@ class AdminStockMovementController extends Controller
             $query->where('movement_type', $movementType);
         }
 
+        if ($date) {
+            $query->whereDate('created_at', $date);
+        }
+
         $movements  = $query->paginate(50)->withQueryString();
         $warehouses = Warehouse::orderBy('name')->pluck('name', 'id');
         $types      = StockMovement::TYPES;
 
         return view('admin.stock-movements.index', compact(
-            'movements', 'warehouses', 'types', 'warehouseId', 'movementType'
+            'movements', 'warehouses', 'types', 'warehouseId', 'movementType', 'date'
         ));
     }
 }

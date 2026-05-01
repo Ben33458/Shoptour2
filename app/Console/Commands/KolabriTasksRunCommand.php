@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Mail\InvoiceAvailable;
+use App\Mail\OrderConfirmation;
+use Illuminate\Support\Facades\Artisan;
 use App\Models\Admin\DeferredTask;
 use App\Models\Admin\Invoice;
+use App\Models\Orders\Order;
+use App\Services\Admin\AuditLogService;
 use App\Services\Integrations\LexofficeSync;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
@@ -18,8 +22,11 @@ use Illuminate\Support\Facades\Mail;
  * Schedule every 5 minutes via cron (see routes/console.php).
  *
  * Supported task types:
- *  - lexoffice.sync_invoice   payload: {invoice_id: int}
- *  - email.invoice_available  payload: {invoice_id: int, email: string}
+ *  - lexoffice.sync_invoice      payload: {invoice_id: int}
+ *  - email.invoice_available     payload: {invoice_id: int, email: string}
+ *  - email.order_confirmation    payload: {order_id: int, customer_id: int}
+ *  - wawi.sync_prices            payload: {} — runs wawi:sync-prices
+ *  - wawi.sync_leergut           payload: {} — runs wawi:sync-leergut
  */
 class KolabriTasksRunCommand extends Command
 {
@@ -98,8 +105,11 @@ class KolabriTasksRunCommand extends Command
         $payload = $task->getPayload();
 
         match ($task->type) {
-            'lexoffice.sync_invoice' => $this->handleLexofficeSync($payload),
-            'email.invoice_available' => $this->handleEmailInvoiceAvailable($payload),
+            'lexoffice.sync_invoice'   => $this->handleLexofficeSync($payload),
+            'email.invoice_available'  => $this->handleEmailInvoiceAvailable($payload),
+            'email.order_confirmation' => $this->handleEmailOrderConfirmation($payload),
+            'wawi.sync_prices'         => Artisan::call('wawi:sync-prices'),
+            'wawi.sync_leergut'        => Artisan::call('wawi:sync-leergut'),
             default => throw new \UnexpectedValueException("Unknown task type: {$task->type}"),
         };
     }
@@ -125,5 +135,42 @@ class KolabriTasksRunCommand extends Command
 
         $invoice = Invoice::findOrFail($invoiceId);
         Mail::to($email)->send(new InvoiceAvailable($invoice));
+
+        app(AuditLogService::class)->log('invoice.mail.sent', $invoice, [
+            'invoice_number' => $invoice->invoice_number,
+            'recipient'      => $email,
+            'source'         => 'deferred_task',
+        ]);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleEmailOrderConfirmation(array $payload): void
+    {
+        $orderId = (int) ($payload['order_id'] ?? 0);
+
+        $order = Order::with(['items.product', 'rentalBookingItems.rentalItem', 'customer'])
+            ->findOrFail($orderId);
+
+        $customerEmail = $order->customer?->email ?? $order->customer?->billing_email;
+        if (! $customerEmail) {
+            throw new \InvalidArgumentException("No customer email for order {$orderId}");
+        }
+
+        $mailable = new OrderConfirmation($order);
+
+        // Send to customer
+        Mail::to($customerEmail)->send($mailable);
+
+        app(AuditLogService::class)->log('order.confirmation.sent', $order, [
+            'order_id'   => $order->id,
+            'recipient'  => $customerEmail,
+            'source'     => 'deferred_task',
+        ]);
+
+        // Send internal copy to company
+        $internalEmail = config('mail.from.address');
+        if ($internalEmail) {
+            Mail::to($internalEmail)->send(new OrderConfirmation($order));
+        }
     }
 }

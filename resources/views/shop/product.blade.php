@@ -18,14 +18,14 @@
     <nav class="text-sm text-gray-400 mb-6">
         <a href="{{ route('shop.products') }}" class="hover:text-amber-600">Shop</a>
         @if($product->category)
+            @if($product->category->parent)
+                <span class="mx-1">/</span>
+                <a href="{{ route('shop.products', ['kategorie' => $product->category->parent_id]) }}"
+                   class="hover:text-amber-600">{{ $product->category->parent->name }}</a>
+            @endif
             <span class="mx-1">/</span>
             <a href="{{ route('shop.products', ['kategorie' => $product->category_id]) }}"
                class="hover:text-amber-600">{{ $product->category->name }}</a>
-        @endif
-        @if($product->warengruppe)
-            <span class="mx-1">/</span>
-            <a href="{{ route('shop.products', ['warengruppe' => $product->warengruppe_id]) }}"
-               class="hover:text-amber-600">{{ $product->warengruppe->name }}</a>
         @endif
         <span class="mx-1">/</span>
         <span class="text-gray-600">{{ $product->produktname }}</span>
@@ -53,8 +53,10 @@
                     </div>
                 @endif
             @else
-                <div class="aspect-square bg-white rounded-2xl border border-gray-100 flex items-center justify-center text-gray-300">
-                    <svg class="w-24 h-24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <div class="aspect-square bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                    <img src="{{ $product->placeholderImageUrl() }}"
+                         alt="{{ $product->produktname }}"
+                         class="w-full h-full object-contain p-4">
                 </div>
             @endif
         </div>
@@ -94,12 +96,12 @@
                             <span class="text-3xl font-bold text-gray-900">{{ milli_to_eur($price->netMilli) }}</span>
                             <span class="text-sm text-gray-400">netto</span>
                         </div>
-                        <p class="text-sm text-gray-500 mt-0.5">Brutto: {{ milli_to_eur($price->grossMilli) }} (inkl. {{ ($product->taxRate?->rate_basis_points ?? 190_000) / 10_000 }}% MwSt.)</p>
+                        <p class="text-sm text-gray-500 mt-0.5">Brutto: {{ milli_to_eur($price->grossMilli) }} (inkl. {{ ($product->taxRate?->rate_basis_points ?? 1900) / 100 }}% MwSt.)</p>
                     @else
                         {{-- Brutto display (B2C) --}}
                         <div class="flex items-baseline gap-2">
                             <span class="text-3xl font-bold text-gray-900">{{ milli_to_eur($price->grossMilli) }}</span>
-                            <span class="text-sm text-gray-400">inkl. {{ ($product->taxRate?->rate_basis_points ?? 190_000) / 10_000 }}% MwSt.</span>
+                            <span class="text-sm text-gray-400">inkl. {{ ($product->taxRate?->rate_basis_points ?? 1900) / 100 }}% MwSt.</span>
                         </div>
                         <p class="text-sm text-gray-500 mt-0.5">Netto: {{ milli_to_eur($price->netMilli) }}</p>
                     @endif
@@ -122,6 +124,22 @@
             @endif
 
             {{-- Gebinde / package info --}}
+            {{-- Grundpreis (PAngV) + Versandhinweis --}}
+            @php $grundpreis = $product->grundpreis_text; @endphp
+            <div class="text-xs text-gray-400 mb-4 space-y-0.5">
+                @if($grundpreis)
+                    <p><span class="font-medium text-gray-500">Grundpreis:</span> {{ $grundpreis }}</p>
+                @endif
+                <p>
+                    zzgl.
+                    @if(\Illuminate\Support\Facades\Route::has('shop.shipping'))
+                        <a href="{{ route('shop.shipping') }}" class="underline hover:text-gray-600">Versandkosten</a>
+                    @else
+                        Versandkosten
+                    @endif
+                </p>
+            </div>
+
             @if($product->gebinde)
                 <p class="text-sm text-gray-500 mb-1">
                     <span class="font-medium">Gebinde:</span> {{ $product->gebinde->name }}
@@ -150,7 +168,7 @@
 
             {{-- Add to cart --}}
             @if($product->availability_mode !== 'discontinued')
-                <form method="POST" action="{{ route('cart.add') }}" class="flex gap-3 mb-4">
+                <form method="POST" action="{{ route('cart.add') }}" class="flex gap-3 mb-3">
                     @csrf
                     <input type="hidden" name="product_id" value="{{ $product->id }}">
                     <input type="number" name="qty" value="1" min="1" max="999"
@@ -162,6 +180,20 @@
                     </button>
                 </form>
             @endif
+            @auth
+            <form method="POST" action="{{ route('account.favorites.store') }}" class="mb-4">
+                @csrf
+                <input type="hidden" name="product_id" value="{{ $product->id }}">
+                <button type="submit"
+                        class="flex items-center justify-center gap-2 w-full text-sm font-medium rounded-xl py-2.5 border transition-colors
+                               {{ $isFavorite
+                                  ? 'bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100'
+                                  : 'bg-white border-gray-300 text-gray-600 hover:border-amber-400 hover:text-amber-600' }}">
+                    <span class="text-base leading-none">{{ $isFavorite ? '♥' : '♡' }}</span>
+                    <span>{{ $isFavorite ? 'Im Stammsortiment' : 'Zum Stammsortiment hinzufügen' }}</span>
+                </button>
+            </form>
+            @endauth
         </div>
     </div>
 
@@ -177,9 +209,7 @@
                             @if($comp->mainImage)
                                 <img src="{{ Storage::url($comp->mainImage->path) }}" alt="{{ $comp->produktname }}" class="w-full h-full object-contain p-1">
                             @else
-                                <div class="w-full h-full flex items-center justify-center text-gray-300">
-                                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-                                </div>
+                                <img src="{{ $comp->placeholderImageUrl() }}" alt="{{ $comp->produktname }}" class="w-full h-full object-contain p-1">
                             @endif
                         </div>
                         <div class="flex-1 min-w-0">
@@ -196,10 +226,29 @@
     @endif
 
     {{-- === LMIV / Product details =========================================== --}}
-    @if($product->activeLmivVersion)
-        @php $lmiv = $product->activeLmivVersion; @endphp
-        <div class="mt-12 border-t border-gray-200 pt-8">
+    @php
+        $lmiv = $product->activeLmivVersion ?? $product->baseItem?->activeLmivVersion;
+        // Alkohol: product-level field takes precedence, then LMIV, then null
+        $alkohol = $product->alkoholgehalt_vol_percent
+                   ?? ($lmiv?->alkoholgehalt)
+                   ?? null;
+    @endphp
+    @if($alkohol !== null && $alkohol > 0)
+        <div class="mt-8 border-t border-gray-200 pt-6">
+            <div class="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm font-medium text-amber-800">
+                <span>🍺</span>
+                <span>Alkoholgehalt: {{ number_format($alkohol, 1, ',', '') }} % vol.</span>
+                @if($alkohol >= 1.2)
+                    <span class="text-xs font-normal text-amber-600 ml-1">· Nur für Erwachsene</span>
+                @endif
+            </div>
+        </div>
+    @endif
+    @if($lmiv)
+        <div class="mt-8 border-t border-gray-200 pt-8">
             <h2 class="text-lg font-bold text-gray-900 mb-6">Produktinformationen (LMIV)</h2>
+
+            {{-- Alkohol already shown above --}}
 
             <div class="grid md:grid-cols-2 gap-6">
 
@@ -237,6 +286,36 @@
                                 @endif
                                 @if($lmiv->naehrwert_salz !== null)
                                     <tr><td class="py-1 text-gray-500">Salz</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_salz }} g</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_natrium !== null || $lmiv->naehrwert_calcium !== null || $lmiv->naehrwert_magnesium !== null)
+                                    <tr><td colspan="2" class="py-1 pt-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">Mineralien</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_natrium !== null)
+                                    <tr><td class="py-1 text-gray-500">Natrium</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_natrium }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_calcium !== null)
+                                    <tr><td class="py-1 text-gray-500">Calcium</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_calcium }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_magnesium !== null)
+                                    <tr><td class="py-1 text-gray-500">Magnesium</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_magnesium }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_hydrogencarbonat !== null)
+                                    <tr><td class="py-1 text-gray-500">Hydrogencarbonat</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_hydrogencarbonat }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_kalium !== null)
+                                    <tr><td class="py-1 text-gray-500">Kalium</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_kalium }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_chlorid !== null)
+                                    <tr><td class="py-1 text-gray-500">Chlorid</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_chlorid }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_sulfat !== null)
+                                    <tr><td class="py-1 text-gray-500">Sulfat</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_sulfat }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_fluorid !== null)
+                                    <tr><td class="py-1 text-gray-500">Fluorid</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_fluorid }} mg</td></tr>
+                                @endif
+                                @if($lmiv->naehrwert_kieselsaeure !== null)
+                                    <tr><td class="py-1 text-gray-500">Kieselsäure</td><td class="py-1 text-right font-medium">{{ $lmiv->naehrwert_kieselsaeure }} mg</td></tr>
                                 @endif
                             </tbody>
                         </table>

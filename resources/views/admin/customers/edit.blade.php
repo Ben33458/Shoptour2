@@ -23,4 +23,6 @@
     </div>
 </div>
 
+@include('admin.customers._addresses_section', ['customer' => $customer])
+
 @endsection

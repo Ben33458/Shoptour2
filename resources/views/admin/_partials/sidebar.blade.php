@@ -1,154 +1,138 @@
 {{--
-    Admin Sidebar Navigation
-    ───────────────────────
-    Zentral definierte Menüstruktur. Alle Änderungen am Menü hier vornehmen.
-    Active-State per request()->routeIs(). Rechte-Checks hier ergänzen falls nötig.
-
-    Reihenfolge:
-      1 Verkauf     → Bestellungen, Rechnungen
-      2 Katalog     → Produkte, Kategorien, Marken, Produktlinien, Gebinde, LMIV
-      3 Preise      → Kundengruppen
-      4 Lager       → Lagerorte, Bestände, Bewegungen
-      5 Kunden
-      6 Lieferanten
-      7 Pfand       → Pfandpositionen, Pfandsets
-      8 Inhalte     → CMS-Seiten
-      9 Berichte
-     10 Integrationen → Lexoffice
-     11 System       → Aufgaben-Queue, Fahrer-Token, Diagnose, Deployment
+    Admin Sidebar Navigation — NEUE STRUKTUR (2026-04)
+    ────────────────────────────────────────────────────
+    Nur noch 11 Hauptbereiche. Sub-Navigation läuft über section-nav.blade.php.
+    Active-State per request()->routeIs().
 --}}
 <nav class="nav">
-    <div class="nav-logo">🍺 Kolabri Admin</div>
+    <div class="nav-logo">
+        <img src="{{ asset('images/kolabri_logo.png') }}" alt="Kolabri Getränke" style="height:72px;width:auto;display:block">
+    </div>
+
+    {{-- ── Dashboard ── --}}
+    <a href="{{ route('admin.dashboard') }}"
+       class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}"
+       style="font-weight:600;">
+        Dashboard
+    </a>
 
     {{-- ── 1. Verkauf ── --}}
-    <div class="nav-section">Verkauf</div>
     <a href="{{ route('admin.orders.index') }}"
-       class="{{ request()->routeIs('admin.orders.*') ? 'active' : '' }}">
-        Bestellungen
-    </a>
-    <a href="{{ route('admin.invoices.index') }}"
-       class="{{ request()->routeIs('admin.invoices.*') ? 'active' : '' }}">
-        Rechnungen
+       class="{{ request()->routeIs('admin.orders.*', 'admin.invoices.*', 'admin.cash-registers.*', 'admin.rental.delivery-returns.*') ? 'active' : '' }}">
+        Verkauf
     </a>
 
-    {{-- ── 2. Katalog ── --}}
-    <div class="nav-section">Katalog</div>
+    {{-- ── 1a. Finanzen / Mahnwesen ── --}}
+    <a href="{{ route('admin.debtor.index') }}"
+       class="{{ request()->routeIs('admin.debtor.*', 'admin.dunning.*', 'admin.settings.dunning.*') ? 'active' : '' }}">
+        Finanzen
+        @php
+            $openDebtorCount = \App\Models\Pricing\Customer::where('debt_hold', false)
+                ->whereHas('openVouchers', fn($q) => $q->where('is_dunning_blocked', false))
+                ->count();
+        @endphp
+        @if($openDebtorCount > 0)
+            <span style="background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:auto;">{{ $openDebtorCount }}</span>
+        @endif
+    </a>
+
+    {{-- ── 1b. Statistik ── --}}
+    <a href="{{ route('admin.statistics.pos_top') }}"
+       class="{{ request()->routeIs('admin.statistics.*') ? 'active' : '' }}">
+        Statistik
+    </a>
+    @if(request()->routeIs('admin.statistics.*'))
+    <div style="padding-left:16px;margin-top:-4px;display:flex;flex-direction:column;gap:2px">
+        <a href="{{ route('admin.statistics.pos_top') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.statistics.pos_top') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            Top-Artikel
+        </a>
+        <a href="{{ route('admin.statistics.purchase_planning') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.statistics.purchase_planning') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            Einkaufsplanung
+        </a>
+        <a href="{{ route('admin.statistics.warengruppen') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.statistics.warengruppen') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            Warengruppen
+        </a>
+        <a href="{{ route('admin.statistics.pfand') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.statistics.pfand') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            Pfand
+        </a>
+        <a href="{{ route('admin.statistics.mhd_abschreibungen') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.statistics.mhd_abschreibungen') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            MHD-Abschreibungen
+        </a>
+    </div>
+    @endif
+
+    {{-- ── 2. Verleih & Events ── --}}
+    <a href="{{ route('admin.rental.items.index') }}"
+       class="{{ request()->routeIs('admin.rental.*', 'admin.event.locations.*', 'admin.assets.issues.*', 'admin.vehicles.*') ? 'active' : '' }}">
+        Verleih &amp; Events
+    </a>
+
+    {{-- ── 3. Katalog ── --}}
     <a href="{{ route('admin.products.index') }}"
-       class="{{ request()->routeIs('admin.products.*') ? 'active' : '' }}">
-        Produkte
-    </a>
-    <a href="{{ route('admin.categories.index') }}"
-       class="{{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
-        Kategorien
-    </a>
-    <a href="{{ route('admin.brands.index') }}"
-       class="{{ request()->routeIs('admin.brands.*') ? 'active' : '' }}">
-        Marken
-    </a>
-    <a href="{{ route('admin.product-lines.index') }}"
-       class="{{ request()->routeIs('admin.product-lines.*') ? 'active' : '' }}">
-        Produktlinien
-    </a>
-    <a href="{{ route('admin.gebinde.index') }}"
-       class="{{ request()->routeIs('admin.gebinde.*') ? 'active' : '' }}">
-        Gebinde
-    </a>
-    {{-- LMIV als Unterbereich --}}
-    <div class="nav-subsection">LMIV</div>
-    <a href="{{ route('admin.lmiv.index') }}"
-       class="nav-sub {{ request()->routeIs('admin.lmiv.*') && !request()->routeIs('admin.imports.lmiv*') ? 'active' : '' }}">
-        LMIV verwalten
-    </a>
-    <a href="{{ route('admin.imports.lmiv') }}"
-       class="nav-sub {{ request()->routeIs('admin.imports.lmiv*') ? 'active' : '' }}">
-        LMIV importieren
+       class="{{ request()->routeIs('admin.products.*', 'admin.categories.*', 'admin.customer-groups.*') ? 'active' : '' }}">
+        Katalog
     </a>
 
-    {{-- ── 3. Preise ── --}}
-    <div class="nav-section">Preise</div>
-    <a href="{{ route('admin.customer-groups.index') }}"
-       class="{{ request()->routeIs('admin.customer-groups.*') ? 'active' : '' }}">
-        Kundengruppen
-    </a>
-
-    {{-- ── 4. Lager ── --}}
-    <div class="nav-section">Lager</div>
-    <a href="{{ route('admin.warehouses.index') }}"
-       class="{{ request()->routeIs('admin.warehouses.*') ? 'active' : '' }}">
-        Lagerorte
-    </a>
+    {{-- ── 4. Lager & Einkauf ── --}}
     <a href="{{ route('admin.stock.index') }}"
-       class="{{ request()->routeIs('admin.stock.*') ? 'active' : '' }}">
-        Bestände
-    </a>
-    <a href="{{ route('admin.stock-movements.index') }}"
-       class="{{ request()->routeIs('admin.stock-movements.*') ? 'active' : '' }}">
-        Bewegungen
+       class="{{ request()->routeIs('admin.stock.*', 'admin.stock-movements.*', 'admin.warehouses.*', 'admin.suppliers.*', 'admin.einkauf.*') ? 'active' : '' }}">
+        Lager &amp; Einkauf
     </a>
 
     {{-- ── 5. Kunden ── --}}
-    <div class="nav-section">Kunden</div>
     <a href="{{ route('admin.customers.index') }}"
        class="{{ request()->routeIs('admin.customers.*') ? 'active' : '' }}">
         Kunden
     </a>
 
-    {{-- ── 6. Lieferanten ── --}}
-    <div class="nav-section">Lieferanten</div>
-    <a href="{{ route('admin.suppliers.index') }}"
-       class="{{ request()->routeIs('admin.suppliers.*') ? 'active' : '' }}">
-        Lieferanten
+    {{-- ── 6. Kommunikation ── --}}
+    <a href="{{ route('admin.communications.index') }}"
+       class="{{ request()->routeIs('admin.communications.*') ? 'active' : '' }}">
+        Kommunikation
+        @php $reviewCount = \App\Models\Communications\Communication::where('status', 'review')->count(); @endphp
+        @if($reviewCount > 0)
+            <span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:auto;">{{ $reviewCount }}</span>
+        @endif
     </a>
 
-    {{-- ── 7. Pfand ── --}}
-    <div class="nav-section">Pfand</div>
-    <a href="{{ route('admin.pfand-items.index') }}"
-       class="{{ request()->routeIs('admin.pfand-items.*') ? 'active' : '' }}">
-        Pfandpositionen
-    </a>
-    <a href="{{ route('admin.pfand-sets.index') }}"
-       class="{{ request()->routeIs('admin.pfand-sets.*') ? 'active' : '' }}">
-        Pfandsets
+    {{-- ── 7. Personal ── --}}
+    <a href="{{ route('admin.employees.index') }}"
+       class="{{ request()->routeIs('admin.employees.*', 'admin.shifts.*', 'admin.time.*', 'admin.vacation.*', 'admin.onboarding.*', 'admin.emp-tasks.*', 'admin.recurring-tasks.*', 'employee.*') ? 'active' : '' }}">
+        Personal
+        @php $pendingOnboarding = \App\Models\Employee\Employee::where('onboarding_status','pending_review')->count(); @endphp
+        @if($pendingOnboarding > 0)
+            <span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:auto;">{{ $pendingOnboarding }}</span>
+        @endif
     </a>
 
-    {{-- ── 8. Inhalte ── --}}
-    <div class="nav-section">Inhalte</div>
+    {{-- ── 8. Import & Synchronisation ── --}}
+    <a href="{{ route('admin.reconcile.hub') }}"
+       class="{{ request()->routeIs('admin.reconcile.*', 'admin.integrations.*', 'admin.ninox-import.*', 'admin.imports.*') ? 'active' : '' }}">
+        Import &amp; Sync
+    </a>
+
+    {{-- ── Primeur-Archiv (IT-Drink Altdaten) ── --}}
+    <a href="{{ route('admin.primeur.dashboard') }}"
+       class="{{ request()->routeIs('admin.primeur.*') ? 'active' : '' }}"
+       title="IT-Drink Archiv 2015–2024">
+        Primeur-Archiv
+    </a>
+
+    {{-- ── 9. Administration ── --}}
+    <a href="{{ route('admin.users.index') }}"
+       class="{{ request()->routeIs('admin.users.*', 'admin.driver-tokens.*', 'admin.diagnostics', 'admin.deploy.*', 'admin.audit-logs.*', 'admin.tasks.*', 'admin.settings.shop_display.*') ? 'active' : '' }}">
+        Administration
+    </a>
+
+    {{-- ── 10. Mehr ── --}}
     <a href="{{ route('admin.pages.index') }}"
-       class="{{ request()->routeIs('admin.pages.*') ? 'active' : '' }}">
-        CMS-Seiten
-    </a>
-
-    {{-- ── 9. Berichte ── --}}
-    <div class="nav-section">Berichte</div>
-    <a href="{{ route('admin.reports.index') }}"
-       class="{{ request()->routeIs('admin.reports.*') ? 'active' : '' }}">
-        Berichte
-    </a>
-
-    {{-- ── 10. Integrationen ── --}}
-    <div class="nav-section">Integrationen</div>
-    <a href="{{ route('admin.integrations.lexoffice') }}"
-       class="{{ request()->routeIs('admin.integrations.*') ? 'active' : '' }}">
-        Lexoffice
-    </a>
-
-    {{-- ── 11. System ── --}}
-    <div class="nav-section">System</div>
-    <a href="{{ route('admin.tasks.index') }}"
-       class="{{ request()->routeIs('admin.tasks.*') ? 'active' : '' }}">
-        Aufgaben-Queue
-    </a>
-    <a href="{{ route('admin.driver-tokens.index') }}"
-       class="{{ request()->routeIs('admin.driver-tokens.*') ? 'active' : '' }}">
-        Fahrer-Token
-    </a>
-    <a href="{{ route('admin.diagnostics') }}"
-       class="{{ request()->routeIs('admin.diagnostics') ? 'active' : '' }}">
-        Diagnose
-    </a>
-    <a href="{{ route('admin.deploy.index') }}"
-       class="{{ request()->routeIs('admin.deploy.*') ? 'active' : '' }}">
-        Deployment
+       class="{{ request()->routeIs('admin.pages.*', 'admin.features') ? 'active' : '' }}">
+        Mehr
     </a>
 
     <div class="nav-footer">

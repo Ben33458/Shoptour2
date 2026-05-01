@@ -22,7 +22,7 @@
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <input type="text" name="search" value="{{ $search }}"
                class="form-control" style="max-width:280px"
-               placeholder="Artikelnummer / Name …">
+               placeholder="Artikelnummer / Name / EAN …">
         <label style="display:flex;align-items:center;gap:6px;font-size:.9em">
             <input type="checkbox" name="only_base" value="1" {{ $onlyBase ? 'checked' : '' }}>
             Nur Basis-Artikel

@@ -36,6 +36,8 @@ class PurchaseOrderItem extends Model
         'unit_purchase_milli',
         'line_total_milli',
         'received_qty',
+        'notes',
+        'sort_order',
     ];
 
     protected $casts = [
@@ -43,6 +45,7 @@ class PurchaseOrderItem extends Model
         'unit_purchase_milli'  => 'integer',
         'line_total_milli'     => 'integer',
         'received_qty'         => 'float',
+        'sort_order'           => 'integer',
     ];
 
     // =========================================================================

@@ -68,7 +68,7 @@ class LexofficeSync
                 'unitPrice'   => [
                     'currency'         => 'EUR',
                     'netAmount'        => round($item->unit_price_net_milli / 1_000_000, 6),
-                    'taxRatePercentage' => round($item->tax_rate_basis_points / 10_000, 2),
+                    'taxRatePercentage' => round($item->tax_rate_basis_points / 100, 2),
                 ],
                 'discountPercentage' => 0,
             ];

@@ -1,0 +1,84 @@
+Setze in Shoptour2 das Modul **Bestandsaufnahme** auf Basis der beigefuegten MVP-Dateien um.
+
+Arbeite strikt nach den Projektregeln, respektiere bestehende Strukturen und lege nichts doppelt oder widersprüchlich an. Bestehende Artikel-, Lager-, Lieferanten- und Admin-Strukturen sollen wiederverwendet und nur gezielt erweitert werden.
+
+## Dateien
+1. `01_MVP_Shoptour2_Bestandsaufnahme.md`
+2. `02_MVP_Shoptour2_Bestandsaufnahme_Import_Mapping.md`
+
+## Ziel
+Ein produktiv nutzbares MVP für lagerbezogene Bestandsaufnahme mit:
+- Speicherung in Basiseinheit
+- Mehrfach-Eingabefeldern je Verpackungseinheit
+- Sofortbuchung
+- vollständiger Historie
+- MHD-Logik
+- Ladenhüter-Logik
+- Dashboard-Widgets
+- ODS-Import mit Mapping und Konfliktmarkierung
+
+## Wichtige Fachregeln
+- DB speichert Bestände und Mindestbestände in **Basiseinheit**
+- Eingabe und Anzeige darf in **VPE** erfolgen
+- Produkte können mehrere Verpackungseinheiten und mehrere Lieferanten haben
+- pro Basisartikel genau ein Standard-Lieferant
+- MHD-Priorität: **Artikel > Lager > Kategorie > Warengruppe > Default**
+- MHD-Modi: **nie / optional / pflichtig**
+- mehrere Chargen je Artikel/Lager möglich
+- FEFO-Grundlogik
+- Parallelzählung ist erlaubt
+- Sessions können pausiert und fortgesetzt werden
+- Negativbestände sind erlaubt
+- jede Änderung muss sofort journalisiert werden
+- bei Konflikten zwischen ODS und DB gilt: **DB gewinnt**, aber Konflikt markieren
+- Standardansicht der Bestandsaufnahme: **nach Lieferant**
+
+## Importquelle
+Nutze die Datei:
+`bestellzettel_Mindestbestand_Lieferanten_GUT_HMI_VENTENusw.ods`
+
+Behandle die Datei nicht als einheitliche Tabelle. Es sind verschiedene Lieferantenblätter mit unterschiedlichem Aufbau. Wichtig sind insbesondere:
+- Winkels-GUT-Trinks
+- Hassia
+- Eders
+- Außenlager_Roßdorf
+- Herrnbräu
+- Wostok
+- Selgros
+- HBI_Neu / HBI_alt
+- Tabelle28
+
+## Erwartete Umsetzung
+1. Bestehende Datenstrukturen prüfen und wiederverwenden
+2. notwendige Migrationen sauber anlegen
+3. Datenmodell für Verpackungseinheiten, Mindestbestände, Sessions, Positionen, Chargen, Bewegungen, MHD-Regeln, Ladenhüter-Regeln ergänzen
+4. Adminseiten / Ressourcen ergänzen
+5. Bestandsaufnahme-UI implementieren
+6. Importlogik für ODS mit Rohimport, Mapping und Konfliktprotokoll umsetzen
+7. Dashboard-Kacheln / Listen ergänzen
+8. feste Korrekturgründe implementieren
+9. Ladenhüter-Regeln und Aktionen implementieren
+10. sauber testen
+
+## Umsetzungsvorgaben
+- keine unnötigen Breaking Changes
+- keine wilden Refactorings außerhalb des betroffenen Bereichs
+- keine doppelten Tabellen oder parallelen Schattenstrukturen anlegen, wenn es bestehende passende Tabellen gibt
+- vorhandene Benennungen und Patterns im Projekt beachten
+- Migrations- und Seed-Daten sauber halten
+- UI pragmatisch, schnell bedienbar und tastaturfreundlich bauen
+- MHD-Felder nur dann anzeigen/erzwingen, wenn die Regel das verlangt
+- Mehrfachgebinde pro Artikel in einer Zeile oder logisch zusammenhängend erfassbar machen
+- sofortige Bestandsbuchung mit Vorher/Nachher/Delta/Grund/Benutzer/Session dokumentieren
+
+## Konkrete Lieferergebnisse
+Bitte liefere am Ende:
+1. Übersicht, was bereits vorhanden war und was neu ergänzt wurde
+2. Liste aller neuen/geänderten Tabellen und Felder
+3. Liste aller neuen/geänderten Routen, Controller, Services, Models, Views/Pages
+4. Beschreibung der Importstrategie pro Blatt-Typ
+5. offene Punkte / Risiken
+6. Change-Tracker-Eintrag
+
+## Wichtig
+Wenn Spalten in einem ODS-Blatt fachlich nicht eindeutig zuordenbar sind, **nicht raten**. Dann sauber markieren und für manuelle Prüfung vorbereiten, statt still falsch zu importieren.

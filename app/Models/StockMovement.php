@@ -46,6 +46,15 @@ class StockMovement extends Model
         'created_at'     => 'datetime',
     ];
 
+    // ── Movement type constants ────────────────────────────────────────────────
+
+    public const TYPE_PURCHASE_IN      = 'purchase_in';
+    public const TYPE_SALE_OUT         = 'sale_out';
+    public const TYPE_CORRECTION       = 'correction';
+    public const TYPE_TRANSFER_IN      = 'transfer_in';
+    public const TYPE_TRANSFER_OUT     = 'transfer_out';
+    public const TYPE_BUNDLE_EXPLOSION = 'bundle_explosion';
+
     // ── Movement type labels ───────────────────────────────────────────────────
 
     public const TYPES = [

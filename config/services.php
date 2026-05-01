@@ -42,4 +42,31 @@ return [
         ],
     ],
 
+
+    'wawi' => [
+        'sync_token' => env('WAWI_SYNC_TOKEN', 'changeme'),
+    ],
+
+    'getraenkedb' => [
+        'url' => env('GETRAENKEDB_API_URL', 'http://89.167.121.25:8800/api/v1'),
+        'key' => env('GETRAENKEDB_API_KEY', ''),
+    ],
+
+    'ninox' => [
+        'api_key' => env('NINOX_API_KEY'),
+        'team_id' => env('NINOX_TEAM_ID', 'yzW23724nQbqCQX9R'),
+        // kehr (aktuell) — Kunden, Mitarbeiter, Veranstaltung, Kassenbuch …
+        'db_id_kehr' => env('NINOX_DB_ID_KEHR', 'tpwd0lln7f65'),
+        // alte DB — ProduktDB, WaWi, Tourenplanung …
+        'db_id_alt'  => env('NINOX_DB_ID_ALT', 'fadrrq8poh9b'),
+        // Rückwärtskompatibilität
+        'db_id'      => env('NINOX_DB_ID', 'tpwd0lln7f65'),
+    ],
+
+    'gmail' => [
+        'client_id'     => env('GMAIL_CLIENT_ID'),
+        'client_secret' => env('GMAIL_CLIENT_SECRET'),
+        'redirect_uri'  => env('GMAIL_REDIRECT_URI', config('app.url') . '/admin/communications/settings/gmail-callback'),
+    ],
+
 ];

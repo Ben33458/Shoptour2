@@ -10,6 +10,7 @@ use App\Models\Catalog\Product;
 use App\Models\Delivery\TourStop;
 use App\Models\Orders\Order;
 use App\Models\Orders\OrderItem;
+use App\Services\Catalog\JugendschutzService;
 use App\Services\Orders\PfandCalculator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -63,7 +64,7 @@ class AdminOrderController extends Controller
     {
         $order->load([
             'customer',
-            'items',
+            'items.product',
             'tourStop.itemFulfillments',
         ]);
 
@@ -83,8 +84,9 @@ class AdminOrderController extends Controller
         });
 
         $invoice = Invoice::where('order_id', $order->id)->first();
+        $minAge  = JugendschutzService::orderMinAge($order);
 
-        return view('admin.orders.show', compact('order', 'itemDetails', 'stop', 'invoice'));
+        return view('admin.orders.show', compact('order', 'itemDetails', 'stop', 'invoice', 'minAge'));
     }
 
     // =========================================================================

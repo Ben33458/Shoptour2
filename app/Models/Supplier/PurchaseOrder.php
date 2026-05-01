@@ -38,11 +38,19 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class PurchaseOrder extends Model
 {
-    public const STATUS_DRAFT     = 'draft';
-    public const STATUS_SENT      = 'sent';
-    public const STATUS_CONFIRMED = 'confirmed';
-    public const STATUS_RECEIVED  = 'received';
-    public const STATUS_CANCELLED = 'cancelled';
+    public const STATUS_DRAFT              = 'draft';
+    public const STATUS_SENT               = 'sent';
+    public const STATUS_CONFIRMED          = 'confirmed';
+    public const STATUS_PARTIALLY_RECEIVED = 'partially_received';
+    public const STATUS_RECEIVED           = 'received';
+    public const STATUS_CANCELLED          = 'cancelled';
+
+    /** Statuses that indicate the PO is still open for goods receipt */
+    public const OPEN_STATUSES = [
+        self::STATUS_SENT,
+        self::STATUS_CONFIRMED,
+        self::STATUS_PARTIALLY_RECEIVED,
+    ];
 
     protected $fillable = [
         'company_id',
@@ -84,7 +92,7 @@ class PurchaseOrder extends Model
     /** @return HasMany<PurchaseOrderItem> */
     public function items(): HasMany
     {
-        return $this->hasMany(PurchaseOrderItem::class);
+        return $this->hasMany(PurchaseOrderItem::class)->orderBy('sort_order');
     }
 
     // =========================================================================
@@ -104,5 +112,55 @@ class PurchaseOrder extends Model
     public function isCancelled(): bool
     {
         return $this->status === self::STATUS_CANCELLED;
+    }
+
+    public function isPartiallyReceived(): bool
+    {
+        return $this->status === self::STATUS_PARTIALLY_RECEIVED;
+    }
+
+    /** Whether goods receipt can be booked on this PO */
+    public function canReceive(): bool
+    {
+        return in_array($this->status, self::OPEN_STATUSES, true);
+    }
+
+    /** Whether this PO can be cancelled (no goods received yet, and not already received/cancelled) */
+    public function canCancel(): bool
+    {
+        if (in_array($this->status, [self::STATUS_RECEIVED, self::STATUS_CANCELLED], true)) {
+            return false;
+        }
+        // Can cancel if no items have been received
+        return ! $this->items()->whereNotNull('received_qty')->where('received_qty', '>', 0)->exists();
+    }
+
+    /** Whether this PO can be sent (is draft) */
+    public function canSend(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    /** Recalculate total_milli from items */
+    public function recalculateTotal(): void
+    {
+        $this->total_milli = (int) $this->items()->sum('line_total_milli');
+        $this->save();
+    }
+
+    /** All items fully received? */
+    public function allItemsReceived(): bool
+    {
+        return $this->items->every(function (PurchaseOrderItem $item) {
+            return $item->received_qty !== null && $item->received_qty >= $item->qty;
+        });
+    }
+
+    /** Any items partially received? */
+    public function hasAnyReceipt(): bool
+    {
+        return $this->items->contains(function (PurchaseOrderItem $item) {
+            return $item->received_qty !== null && $item->received_qty > 0;
+        });
     }
 }

@@ -36,6 +36,7 @@ class LexofficePull
 {
     public function __construct(
         private readonly LexofficeClient $client,
+        private readonly LexofficeImport $import,
     ) {}
 
     // =========================================================================
@@ -47,90 +48,19 @@ class LexofficePull
      */
     public function pullCustomers(?int $companyId = null): array
     {
-        $stats = [
-            'matched'             => 0,
+        // 1. Import contacts into lexoffice_contacts puffer
+        $importStats = $this->import->importContacts('customer', $companyId);
+
+        // 2. Reconcile (match + create) with local customers
+        $reconcileStats = $this->import->reconcileContacts($companyId, createMissing: true);
+
+        return [
+            'matched'             => $reconcileStats['matched_customers'],
             'contact_id_assigned' => 0,
-            'created'             => 0,
+            'created'             => $reconcileStats['created_customers'],
             'diffs_logged'        => 0,
-            'total_lexoffice'     => 0,
+            'total_lexoffice'     => $importStats['total'],
         ];
-
-        $defaultGroup = CustomerGroup::where('active', true)->orderBy('id')->first();
-
-        // Pre-load blocked Lexoffice contact IDs — these are never re-imported
-        $blockedIds = DB::table('lexoffice_contact_blocks')
-            ->whereIn('blocked_entity', ['customer', 'both'])
-            ->pluck('lexoffice_contact_id')
-            ->flip()   // convert to hash-set for O(1) lookup
-            ->all();
-
-        // Pre-load ALL local customers into memory maps — avoids one DB query per contact.
-        // Keys are lowercase for case-insensitive lookups.
-        $byLexId  = [];   // lexoffice_contact_id → Customer
-        $byEmail  = [];   // lowercase email      → Customer
-        $byNumber = [];   // customer_number       → Customer
-
-        Customer::select(['id','company_id','customer_number','lexoffice_contact_id',
-                           'company_name','first_name','last_name','email','phone'])
-            ->each(function (Customer $c) use (&$byLexId, &$byEmail, &$byNumber): void {
-                if ($c->lexoffice_contact_id) {
-                    $byLexId[$c->lexoffice_contact_id] = $c;
-                }
-                if ($c->email) {
-                    $byEmail[mb_strtolower($c->email)] = $c;
-                }
-                if ($c->customer_number) {
-                    $byNumber[$c->customer_number] = $c;
-                }
-            });
-
-        $page = 0;
-        do {
-            $data     = $this->client->listContacts('customer', $page, 100);
-            $contacts = $data['content'] ?? [];
-            $stats['total_lexoffice'] += count($contacts);
-
-            foreach ($contacts as $contact) {
-                $lexId = $contact['id'] ?? null;
-                if (! $lexId || isset($blockedIds[$lexId])) {
-                    continue;
-                }
-
-                // API filter may return all contacts — enforce customer role client-side
-                if (! isset($contact['roles']['customer'])) {
-                    continue;
-                }
-
-                $customer = $this->findCustomerInMaps($contact, $byLexId, $byEmail, $byNumber);
-
-                if ($customer) {
-                    $stats['matched']++;
-                    if ($customer->lexoffice_contact_id !== $lexId) {
-                        $customer->update(['lexoffice_contact_id' => $lexId]);
-                        $byLexId[$lexId] = $customer; // keep map current
-                        $stats['contact_id_assigned']++;
-                    }
-                    if ($this->compareAndLogCustomerDiff($customer, $contact, $lexId)) {
-                        $stats['diffs_logged']++;
-                    }
-                } else {
-                    $newCustomer = $this->createCustomerFromContact($contact, $lexId, $defaultGroup?->id ?? 1, $companyId);
-                    // Register new customer in maps so duplicates in the same import are caught
-                    $byLexId[$lexId] = $newCustomer;
-                    if ($newCustomer->email) {
-                        $byEmail[mb_strtolower($newCustomer->email)] = $newCustomer;
-                    }
-                    $byNumber[$newCustomer->customer_number] = $newCustomer;
-                    $stats['created']++;
-                }
-
-            }
-
-            $page++;
-            $totalPages = $data['totalPages'] ?? 1;
-        } while ($page < $totalPages);
-
-        return $stats;
     }
 
     /**
@@ -138,97 +68,18 @@ class LexofficePull
      */
     public function pullSuppliers(?int $companyId = null): array
     {
-        $stats = ['matched' => 0, 'contact_id_assigned' => 0, 'created' => 0, 'total_lexoffice' => 0];
+        // 1. Import vendor contacts into lexoffice_contacts puffer
+        $importStats = $this->import->importContacts('vendor', $companyId);
 
-        // Pre-load blocked Lexoffice contact IDs
-        $blockedIds = DB::table('lexoffice_contact_blocks')
-            ->whereIn('blocked_entity', ['supplier', 'both'])
-            ->pluck('lexoffice_contact_id')
-            ->flip()
-            ->all();
+        // 2. Reconcile with local suppliers
+        $reconcileStats = $this->import->reconcileContacts($companyId, createMissing: true);
 
-        // Pre-load all customer lexoffice_contact_ids — contacts that are already
-        // imported as customers are skipped here (pure vendors only in supplier list).
-        $customerLexIds = Customer::whereNotNull('lexoffice_contact_id')
-            ->pluck('lexoffice_contact_id')
-            ->flip()
-            ->all();
-
-        // Pre-load all suppliers into memory maps
-        $byLexId   = [];
-        $byLexNr   = [];  // lieferanten_nr (Lexoffice vendor number as string) → Supplier
-        $byEmail   = [];
-        $byName    = [];
-
-        Supplier::select(['id', 'name', 'email', 'lieferanten_nr', 'lexoffice_contact_id'])
-            ->each(function (Supplier $s) use (&$byLexId, &$byLexNr, &$byEmail, &$byName): void {
-                if ($s->lexoffice_contact_id) {
-                    $byLexId[$s->lexoffice_contact_id] = $s;
-                }
-                if ($s->lieferanten_nr) {
-                    $byLexNr[$s->lieferanten_nr] = $s;
-                }
-                if ($s->email) {
-                    $byEmail[mb_strtolower($s->email)] = $s;
-                }
-                $byName[mb_strtolower($s->name)] = $s;
-            });
-
-        $page = 0;
-        do {
-            $data     = $this->client->listContacts('vendor', $page, 100);
-            $contacts = $data['content'] ?? [];
-            $stats['total_lexoffice'] += count($contacts);
-
-            foreach ($contacts as $contact) {
-                $lexId = $contact['id'] ?? null;
-                if (! $lexId || isset($blockedIds[$lexId])) {
-                    continue;
-                }
-
-                // API filter may return all contacts — enforce vendor role client-side
-                if (! isset($contact['roles']['vendor'])) {
-                    continue;
-                }
-
-                // Skip contacts that already exist as customers — pure vendors only.
-                if (isset($customerLexIds[$lexId])) {
-                    continue;
-                }
-
-                $supplier = $this->findSupplierInMaps($contact, $byLexId, $byLexNr, $byEmail, $byName);
-
-                if ($supplier) {
-                    $stats['matched']++;
-                    $updates = [];
-                    if ($supplier->lexoffice_contact_id !== $lexId) {
-                        $updates['lexoffice_contact_id'] = $lexId;
-                        $byLexId[$lexId] = $supplier;
-                        $stats['contact_id_assigned']++;
-                    }
-                    // Keep type as-is if user manually changed it; only set automatically on first import
-                    if ($updates) {
-                        $supplier->update($updates);
-                    }
-                } else {
-                    $newSupplier = $this->createSupplierFromContact($contact, $lexId, $companyId);
-                    $byLexId[$lexId] = $newSupplier;
-                    if ($newSupplier->lieferanten_nr) {
-                        $byLexNr[$newSupplier->lieferanten_nr] = $newSupplier;
-                    }
-                    if ($newSupplier->email) {
-                        $byEmail[mb_strtolower($newSupplier->email)] = $newSupplier;
-                    }
-                    $byName[mb_strtolower($newSupplier->name)] = $newSupplier;
-                    $stats['created']++;
-                }
-            }
-
-            $page++;
-            $totalPages = $data['totalPages'] ?? 1;
-        } while ($page < $totalPages);
-
-        return $stats;
+        return [
+            'matched'             => $reconcileStats['matched_suppliers'],
+            'contact_id_assigned' => 0,
+            'created'             => $reconcileStats['created_suppliers'],
+            'total_lexoffice'     => $importStats['total'],
+        ];
     }
 
     /**
@@ -239,10 +90,6 @@ class LexofficePull
         $stats = ['updated' => 0, 'already_up_to_date' => 0, 'not_found' => 0, 'errors' => 0];
 
         Invoice::whereNotNull('lexoffice_voucher_id')
-            ->where(function ($q) {
-                $q->whereNull('lexoffice_payment_status')
-                  ->orWhere('lexoffice_payment_status', 'open');
-            })
             ->orderByDesc('finalized_at')
             ->chunk(50, function ($invoices) use (&$stats) {
                 foreach ($invoices as $invoice) {
@@ -266,6 +113,16 @@ class LexofficePull
                             'lexoffice_synced_at'      => now(),
                             'lexoffice_sync_error'     => null,
                         ]);
+
+                        // Mirror the status change into lexoffice_vouchers so that
+                        // openVouchers() (debtor / dunning) reflects the current state.
+                        $voucherUpdate = ['voucher_status' => $newStatus, 'synced_at' => now()];
+                        if (in_array($newStatus, ['paid', 'paidoff'], true)) {
+                            $voucherUpdate['open_amount'] = 0;
+                        }
+                        LexofficeVoucher::where('lexoffice_voucher_id', $invoice->lexoffice_voucher_id)
+                            ->update($voucherUpdate);
+
                         $stats['updated']++;
                     } catch (\Throwable $e) {
                         if (str_contains($e->getMessage(), 'HTTP 404')) {
@@ -281,49 +138,23 @@ class LexofficePull
     }
 
     /**
-     * Pull all vouchers (sales invoices, credit notes, purchase invoices,
-     * purchase credit notes) from Lexoffice and upsert into local DB.
+     * Pull vouchers from Lexoffice and upsert into local DB.
+     * Pass $typesFilter to limit which voucher types are pulled (web UI uses a short list
+     * to avoid gateway timeouts; CLI passes null for all types).
      *
+     * @param  string[]|null  $typesFilter
      * @return array{created: int, updated: int, total_lexoffice: int, errors: int}
      */
-    public function pullVouchers(?int $companyId = null): array
+    public function pullVouchers(?int $companyId = null, ?array $typesFilter = null): array
     {
-        $stats = ['created' => 0, 'updated' => 0, 'total_lexoffice' => 0, 'errors' => 0];
+        $stats = $this->import->importVouchers($companyId, $typesFilter);
 
-        // Pre-load contact → customer/supplier maps for matching
-        $customerMap = Customer::whereNotNull('lexoffice_contact_id')
-            ->pluck('id', 'lexoffice_contact_id')
-            ->all();
-
-        $supplierMap = Supplier::whereNotNull('lexoffice_contact_id')
-            ->pluck('id', 'lexoffice_contact_id')
-            ->all();
-
-        $types = [
-            LexofficeVoucher::TYPE_SALES_INVOICE,
-            LexofficeVoucher::TYPE_CREDIT_NOTE,
-            LexofficeVoucher::TYPE_PURCHASE_INVOICE,
-            LexofficeVoucher::TYPE_PURCHASE_CREDITNOTE,
+        return [
+            'created'        => $stats['created'],
+            'updated'        => $stats['updated'],
+            'total_lexoffice'=> $stats['total'],
+            'errors'         => $stats['errors'],
         ];
-
-        foreach ($types as $type) {
-            $page = 0;
-            do {
-                $data    = $this->client->listVouchers(['voucherType' => $type], $page, 100);
-                $content = $data['content'] ?? [];
-                $stats['total_lexoffice'] += count($content);
-
-                foreach ($content as $item) {
-                    $this->upsertVoucher($item, $companyId, $customerMap, $supplierMap, $stats);
-                }
-
-                $page++;
-                $totalElements = $data['totalElements'] ?? 0;
-                $totalPages    = $data['totalPages'] ?? (int) ceil($totalElements / 100) ?: 1;
-            } while ($page < $totalPages);
-        }
-
-        return $stats;
     }
 
     /**

@@ -23,6 +23,52 @@
     </div>
 </div>
 
+{{-- ── Kommunikationsverlauf ── --}}
+@if($supplier->communications->isNotEmpty())
+<div class="card" style="margin-top:24px">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <span>Kommunikationsverlauf</span>
+        <span style="font-size:.8rem;color:var(--c-muted)">{{ $supplier->communications->count() }} Einträge</span>
+    </div>
+    <div style="padding:0">
+        @foreach($supplier->communications as $comm)
+        <div style="padding:14px 20px;border-bottom:1px solid var(--c-border);display:flex;gap:14px;align-items:flex-start;">
+            <div style="min-width:36px;text-align:center;font-size:1.2rem;padding-top:2px;">
+                @if($comm->source === 'gmail')   📧
+                @elseif($comm->source === 'phone') 📞
+                @else                              📝
+                @endif
+            </div>
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">
+                    <a href="{{ route('admin.communications.show', $comm) }}" style="font-weight:500;font-size:.9rem;">
+                        {{ $comm->subject ?: '(kein Betreff)' }}
+                    </a>
+                    <span class="badge {{ $comm->statusBadgeClass() }}" style="font-size:.7rem;">{{ $comm->statusLabel() }}</span>
+                    @foreach($comm->tags as $tag)
+                        <span style="background:{{ $tag->color ?? '#e5e7eb' }};color:#1f2937;padding:1px 7px;border-radius:10px;font-size:.7rem;">{{ $tag->name }}</span>
+                    @endforeach
+                </div>
+                <div style="font-size:.8rem;color:var(--c-muted);">
+                    {{ $comm->sourceLabel() }}
+                    @if($comm->from_address) · {{ $comm->from_address }} @endif
+                    · {{ $comm->received_at?->format('d.m.Y H:i') ?? '—' }}
+                </div>
+                @if($comm->snippet)
+                <div style="font-size:.8rem;color:var(--c-text);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:600px;">
+                    {{ $comm->snippet }}
+                </div>
+                @endif
+            </div>
+            <div style="white-space:nowrap;">
+                <a href="{{ route('admin.communications.show', $comm) }}" class="btn btn-outline" style="padding:3px 10px;font-size:.75rem;">Details</a>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
 {{-- ── Gefahrenzone ── --}}
 <div class="card" style="margin-top:24px;border-color:var(--c-danger)">
     <div class="card-header" style="color:var(--c-danger)">Gefahrenzone</div>
@@ -39,17 +85,15 @@
             @if($errors->has('source_supplier_id'))
                 <div style="color:var(--c-danger);font-size:13px;margin-bottom:8px">{{ $errors->first('source_supplier_id') }}</div>
             @endif
-            <form method="POST" action="{{ route('admin.suppliers.merge', $supplier) }}"
-                  onsubmit="return confirm('Wirklich zusammenführen? Das Duplikat wird dauerhaft gelöscht!')">
-                @csrf
+            <form method="GET" action="{{ route('admin.suppliers.merge-preview', $supplier) }}">
                 <div style="display:flex;gap:8px">
                     <input type="number" name="source_supplier_id"
                            placeholder="ID des Duplikats"
                            style="flex:1;padding:6px 10px;border:1px solid var(--c-border);border-radius:4px"
                            min="1" required>
                     <button type="submit" class="btn btn-sm"
-                            style="background:var(--c-danger);color:#fff;border-color:var(--c-danger)">
-                        Zusammenführen
+                            style="background:var(--c-warning,#d97706);color:#fff;border-color:var(--c-warning,#d97706)">
+                        Vorschau &amp; Abgleich
                     </button>
                 </div>
             </form>

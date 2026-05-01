@@ -252,7 +252,15 @@
                     @if($customer->customer_number)
                         Kunden-Nr.: {{ $customer->customer_number }}<br>
                     @endif
-                    @if($customer->delivery_address_text)
+                    @php
+                        $invoiceAddr = $invoice->order?->deliveryAddress
+                            ?? $customer->defaultBillingAddress
+                            ?? $customer->defaultDeliveryAddress;
+                    @endphp
+                    @if($invoiceAddr)
+                        {{ $invoiceAddr->company ? $invoiceAddr->company . "\n" : '' }}{{ $invoiceAddr->street }}{{ $invoiceAddr->house_number ? ' ' . $invoiceAddr->house_number : '' }}<br>
+                        {{ $invoiceAddr->zip }} {{ $invoiceAddr->city }}
+                    @elseif($customer->delivery_address_text)
                         {!! nl2br(e($customer->delivery_address_text)) !!}
                     @endif
                 @endif

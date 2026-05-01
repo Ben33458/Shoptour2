@@ -24,3 +24,21 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Server-spezifische Laufzeit- und Datenverzeichnisse
+/db/
+/primeur_raw/
+/temp/
+/graphify-out/
+
+# Datendumps und Exporte
+ninox_all_data.json
+*.xlsx
+
+# Umgebungsvarianten mit echten Credentials
+.env.testing
+.env.local
+
+# Docker-Compose enthält DB-Passwörter — nicht in git
+docker-compose.yml
+docker-compose.override.yml

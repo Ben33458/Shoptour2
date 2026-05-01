@@ -94,35 +94,49 @@ class AdminCustomerController extends Controller
         $company = App::make('current_company');
 
         $validated = $request->validate([
-            'customer_group_id'     => ['required', 'exists:customer_groups,id'],
-            'customer_number'       => ['nullable', 'string', 'max:50'],
-            'first_name'            => ['nullable', 'string', 'max:100'],
-            'last_name'             => ['nullable', 'string', 'max:100'],
-            'email'                 => ['nullable', 'email', 'max:200'],
-            'phone'                 => ['nullable', 'string', 'max:50'],
-            'price_display_mode'    => ['required', 'in:gross,net'],
-            'delivery_address_text' => ['nullable', 'string', 'max:1000'],
-            'delivery_note'         => ['nullable', 'string', 'max:500'],
-            'active'                => ['nullable', 'boolean'],
-            'contacts'              => ['nullable', 'array'],
-            'contacts.*.name'       => ['nullable', 'string', 'max:150'],
-            'contacts.*.phone'      => ['nullable', 'string', 'max:50'],
-            'contacts.*.email'      => ['nullable', 'email', 'max:200'],
-            'contacts.*.role'       => ['nullable', 'string', 'max:100'],
+            'customer_group_id'            => ['required', 'exists:customer_groups,id'],
+            'customer_number'              => ['nullable', 'string', 'max:50'],
+            'company_name'                 => ['nullable', 'string', 'max:200'],
+            'first_name'                   => ['nullable', 'string', 'max:100'],
+            'last_name'                    => ['nullable', 'string', 'max:100'],
+            'email'                        => ['nullable', 'email', 'max:200'],
+            'billing_email'                => ['nullable', 'email', 'max:200'],
+            'notification_email'           => ['nullable', 'email', 'max:200'],
+            'email_notification_shipping'  => ['nullable', 'boolean'],
+            'newsletter_consent'           => ['nullable', 'in:all,important_only,none'],
+            'phone'                        => ['nullable', 'string', 'max:50'],
+            'price_display_mode'           => ['required', 'in:brutto,netto'],
+            'delivery_address_text'        => ['nullable', 'string', 'max:1000'],
+            'delivery_note'                => ['nullable', 'string', 'max:500'],
+            'active'                       => ['nullable', 'boolean'],
+            'contacts'                     => ['nullable', 'array'],
+            'contacts.*.name'              => ['nullable', 'string', 'max:150'],
+            'contacts.*.phone'             => ['nullable', 'string', 'max:50'],
+            'contacts.*.email'             => ['nullable', 'email', 'max:200'],
+            'contacts.*.role'              => ['nullable', 'string', 'max:100'],
+            'kunde_von'                    => ['nullable', 'in:kolabri,kehr'],
+            'birth_date'                   => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
         $customer = Customer::create([
-            'company_id'            => $company?->id,
-            'customer_group_id'     => $validated['customer_group_id'],
-            'customer_number'       => $validated['customer_number'] ?? '',
-            'first_name'            => $validated['first_name'] ?? null,
-            'last_name'             => $validated['last_name'] ?? null,
-            'email'                 => $validated['email'] ?? null,
-            'phone'                 => $validated['phone'] ?? null,
-            'price_display_mode'    => $validated['price_display_mode'],
-            'delivery_address_text' => $validated['delivery_address_text'] ?? null,
-            'delivery_note'         => $validated['delivery_note'] ?? null,
-            'active'                => $request->boolean('active'),
+            'company_id'                   => $company?->id,
+            'customer_group_id'            => $validated['customer_group_id'],
+            'customer_number'              => $validated['customer_number'] ?? '',
+            'company_name'                 => $validated['company_name'] ?? null,
+            'first_name'                   => $validated['first_name'] ?? null,
+            'last_name'                    => $validated['last_name'] ?? null,
+            'email'                        => $validated['email'] ?? null,
+            'billing_email'                => $validated['billing_email'] ?? null,
+            'notification_email'           => $validated['notification_email'] ?? null,
+            'email_notification_shipping'  => $request->boolean('email_notification_shipping', true),
+            'newsletter_consent'           => $validated['newsletter_consent'] ?? 'important_only',
+            'phone'                        => $validated['phone'] ?? null,
+            'price_display_mode'           => $validated['price_display_mode'],
+            'delivery_address_text'        => $validated['delivery_address_text'] ?? null,
+            'delivery_note'                => $validated['delivery_note'] ?? null,
+            'active'                       => $request->boolean('active'),
+            'kunde_von'                    => $validated['kunde_von'] ?: null,
+            'birth_date'                   => $validated['birth_date'] ?? null,
         ]);
 
         // Auto-generate customer_number if blank
@@ -141,7 +155,7 @@ class AdminCustomerController extends Controller
      */
     public function edit(Customer $customer): View
     {
-        $customer->load('contacts');
+        $customer->load(['contacts', 'addresses']);
         $customerGroups = CustomerGroup::where('active', true)->orderBy('name')->get();
 
         return view('admin.customers.edit', compact('customer', 'customerGroups'));
@@ -153,33 +167,47 @@ class AdminCustomerController extends Controller
     public function update(Request $request, Customer $customer): RedirectResponse
     {
         $validated = $request->validate([
-            'customer_group_id'     => ['required', 'exists:customer_groups,id'],
-            'customer_number'       => ['nullable', 'string', 'max:50'],
-            'first_name'            => ['nullable', 'string', 'max:100'],
-            'last_name'             => ['nullable', 'string', 'max:100'],
-            'email'                 => ['nullable', 'email', 'max:200'],
-            'phone'                 => ['nullable', 'string', 'max:50'],
-            'price_display_mode'    => ['required', 'in:gross,net'],
-            'delivery_address_text' => ['nullable', 'string', 'max:1000'],
-            'delivery_note'         => ['nullable', 'string', 'max:500'],
-            'contacts'              => ['nullable', 'array'],
-            'contacts.*.name'       => ['nullable', 'string', 'max:150'],
-            'contacts.*.phone'      => ['nullable', 'string', 'max:50'],
-            'contacts.*.email'      => ['nullable', 'email', 'max:200'],
-            'contacts.*.role'       => ['nullable', 'string', 'max:100'],
+            'customer_group_id'            => ['required', 'exists:customer_groups,id'],
+            'customer_number'              => ['nullable', 'string', 'max:50'],
+            'company_name'                 => ['nullable', 'string', 'max:200'],
+            'first_name'                   => ['nullable', 'string', 'max:100'],
+            'last_name'                    => ['nullable', 'string', 'max:100'],
+            'email'                        => ['nullable', 'email', 'max:200'],
+            'billing_email'                => ['nullable', 'email', 'max:200'],
+            'notification_email'           => ['nullable', 'email', 'max:200'],
+            'email_notification_shipping'  => ['nullable', 'boolean'],
+            'newsletter_consent'           => ['nullable', 'in:all,important_only,none'],
+            'phone'                        => ['nullable', 'string', 'max:50'],
+            'price_display_mode'           => ['required', 'in:brutto,netto'],
+            'delivery_address_text'        => ['nullable', 'string', 'max:1000'],
+            'delivery_note'                => ['nullable', 'string', 'max:500'],
+            'contacts'                     => ['nullable', 'array'],
+            'contacts.*.name'              => ['nullable', 'string', 'max:150'],
+            'contacts.*.phone'             => ['nullable', 'string', 'max:50'],
+            'contacts.*.email'             => ['nullable', 'email', 'max:200'],
+            'contacts.*.role'              => ['nullable', 'string', 'max:100'],
+            'kunde_von'                    => ['nullable', 'in:kolabri,kehr'],
+            'birth_date'                   => ['nullable', 'date', 'before_or_equal:today'],
         ]);
 
         $customer->update([
-            'customer_group_id'     => $validated['customer_group_id'],
-            'customer_number'       => $validated['customer_number'] ?? $customer->customer_number,
-            'first_name'            => $validated['first_name'] ?? null,
-            'last_name'             => $validated['last_name'] ?? null,
-            'email'                 => $validated['email'] ?? null,
-            'phone'                 => $validated['phone'] ?? null,
-            'price_display_mode'    => $validated['price_display_mode'],
-            'delivery_address_text' => $validated['delivery_address_text'] ?? null,
-            'delivery_note'         => $validated['delivery_note'] ?? null,
-            'active'                => $request->boolean('active'),
+            'customer_group_id'            => $validated['customer_group_id'],
+            'customer_number'              => $validated['customer_number'] ?? $customer->customer_number,
+            'company_name'                 => $validated['company_name'] ?? null,
+            'first_name'                   => $validated['first_name'] ?? null,
+            'last_name'                    => $validated['last_name'] ?? null,
+            'email'                        => $validated['email'] ?? null,
+            'billing_email'                => $validated['billing_email'] ?? null,
+            'notification_email'           => $validated['notification_email'] ?? null,
+            'email_notification_shipping'  => $request->boolean('email_notification_shipping', true),
+            'newsletter_consent'           => $validated['newsletter_consent'] ?? 'important_only',
+            'phone'                        => $validated['phone'] ?? null,
+            'price_display_mode'           => $validated['price_display_mode'],
+            'delivery_address_text'        => $validated['delivery_address_text'] ?? null,
+            'delivery_note'                => $validated['delivery_note'] ?? null,
+            'active'                       => $request->boolean('active'),
+            'kunde_von'                    => $validated['kunde_von'] ?: null,
+            'birth_date'                   => $validated['birth_date'] ?? null,
         ]);
 
         $this->syncContacts($customer, $request->input('contacts', []));
@@ -215,13 +243,32 @@ class AdminCustomerController extends Controller
      */
     public function show(Customer $customer): View
     {
-        $customer->load(['customerGroup', 'contacts', 'notes.createdBy', 'notes.reviewedBy']);
+        $customer->load([
+            'customerGroup', 'contacts', 'addresses',
+            'notes.createdBy', 'notes.reviewedBy',
+            'communications.tags',
+            'subUsers.user',
+        ]);
 
         $vouchers = LexofficeVoucher::where('customer_id', $customer->id)
+            ->with('payments')
             ->orderByDesc('voucher_date')
             ->get();
 
-        return view('admin.customers.show', compact('customer', 'vouchers'));
+        $recentOrders = $customer->orders()->latest()->take(5)->get();
+
+        $orderStats = [
+            'count'       => $customer->orders()->count(),
+            'total_milli' => (int) $customer->orders()->sum('total_gross_milli'),
+            'last_date'   => $customer->orders()->latest()->value('created_at'),
+        ];
+
+        $openSaldo = $vouchers
+            ->whereIn('voucher_status', ['open', 'overdue'])
+            ->whereIn('voucher_type', ['salesinvoice', 'downpaymentinvoice'])
+            ->sum('open_amount');
+
+        return view('admin.customers.show', compact('customer', 'vouchers', 'recentOrders', 'orderStats', 'openSaldo'));
     }
 
     /**
@@ -287,6 +334,31 @@ class AdminCustomerController extends Controller
 
         return redirect()->route('admin.customers.show', $target)
             ->with('success', 'Kundendatensatz ' . $source->customer_number . ' wurde in diesen Kunden zusammengeführt und gelöscht.');
+    }
+
+    /**
+     * POST /admin/customers/{customer}/link-wawi
+     * Manually link a customer to a JTL-WaWi record by customer number.
+     */
+    public function linkWawi(Request $request, Customer $customer): RedirectResponse
+    {
+        $validated = $request->validate([
+            'wawi_kunden_nr' => ['required', 'string', 'max:100'],
+        ]);
+
+        $wawiRecord = DB::table('wawi_kunden')
+            ->where('cKundenNr', $validated['wawi_kunden_nr'])
+            ->first();
+
+        if ($wawiRecord === null) {
+            return back()->withErrors(['wawi_kunden_nr' => 'Keine WaWi-Kundennummer "' . $validated['wawi_kunden_nr'] . '" gefunden.']);
+        }
+
+        $customer->update(['wawi_kunden_id' => $wawiRecord->kKunde]);
+
+        return redirect()
+            ->route('admin.customers.show', $customer)
+            ->with('success', 'WaWi-Verknüpfung gespeichert (ID: ' . $wawiRecord->kKunde . ').');
     }
 
     // -------------------------------------------------------------------------

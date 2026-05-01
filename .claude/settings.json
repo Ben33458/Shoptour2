@@ -75,5 +75,38 @@
       "d:\\Claude_Code\\Getraenkeshop\\shop-tours\\app\\Models",
       "d:\\Claude_Code\\Getraenkeshop\\shoptour2-temp"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /srv/projektbase/.claude/hooks/pb-context.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /srv/projektbase/.claude/hooks/pb-mark-dirty.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /srv/projektbase/.claude/hooks/pb-finalize.sh"
+          }
+        ]
+      }
+    ]
   }
 }

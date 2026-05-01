@@ -52,7 +52,14 @@ class RegisterController extends Controller
             'first_name'             => ['required', 'string', 'max:100'],
             'last_name'              => ['required', 'string', 'max:100'],
             'company_name'           => ['nullable', 'string', 'max:255'],
-            'email'                  => ['required', 'email', 'max:255', 'unique:users,email'],
+            'email'                  => [
+                'required', 'email', 'max:255', 'unique:users,email',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (Customer::where('email', $value)->exists()) {
+                        $fail('Ein Kundenkonto mit dieser E-Mail-Adresse existiert bereits. Bitte nutzen Sie die <a href="' . route('activation.show') . '" class="underline">Konto-Aktivierung</a>.');
+                    }
+                },
+            ],
             'password'               => ['required', 'confirmed', Password::min(8)],
             'address.street'         => ['required', 'string', 'max:200'],
             'address.house_number'   => ['required', 'string', 'max:20'],
@@ -106,7 +113,7 @@ class RegisterController extends Controller
                 'last_name'          => $validated['last_name'],
                 'email'              => $user->email,
                 'active'             => true,
-                'price_display_mode' => 'gross',
+                'price_display_mode' => 'brutto',
             ]);
 
             // Set company_name on customer if provided
@@ -115,8 +122,7 @@ class RegisterController extends Controller
             }
 
             $addr = $validated['address'];
-            $customer->addresses()->create([
-                'type'         => 'delivery',
+            $addrData = [
                 'is_default'   => true,
                 'first_name'   => $validated['first_name'],
                 'last_name'    => $validated['last_name'],
@@ -126,7 +132,10 @@ class RegisterController extends Controller
                 'city'         => $addr['city'],
                 'country_code' => 'DE',
                 'phone'        => $addr['phone'] ?? null,
-            ]);
+            ];
+
+            $customer->addresses()->create(array_merge($addrData, ['type' => 'delivery']));
+            $customer->addresses()->create(array_merge($addrData, ['type' => 'billing']));
 
             Auth::login($user);
             $request->session()->regenerate();

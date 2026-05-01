@@ -69,6 +69,7 @@ class Address extends Model
         'drop_off_location',
         'drop_off_location_custom',
         'leave_at_door',
+        'delivery_note',
     ];
 
     protected $casts = [

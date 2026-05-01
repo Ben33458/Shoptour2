@@ -1,9 +1,9 @@
-@extends('shop.layout')
+@extends('shop.account.account-layout')
 
 @section('title', 'Bestellung #' . $order->id)
 
-@section('content')
-<div class="max-w-3xl mx-auto">
+@section('account-content')
+<div>
 
     <div class="flex items-center gap-3 mb-6">
         <a href="{{ route('account.orders') }}" class="text-sm text-gray-400 hover:text-amber-600">← Bestellungen</a>
@@ -24,6 +24,8 @@
                 <div class="flex items-center gap-4">
                     @if($item->product?->mainImage)
                         <img src="{{ Storage::url($item->product->mainImage->path) }}" class="w-12 h-12 object-contain rounded-lg border border-gray-100" alt="">
+                    @elseif($item->product)
+                        <img src="{{ $item->product->placeholderImageUrl() }}" class="w-12 h-12 object-contain rounded-lg border border-gray-100" alt="">
                     @else
                         <div class="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center text-xl opacity-30">🍺</div>
                     @endif

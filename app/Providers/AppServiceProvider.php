@@ -140,5 +140,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('stripe-webhook', function (Request $request) {
             return Limit::perMinute(60)->by('stripe-webhook:' . $request->ip());
         });
+
+        // ── Customer account activation (PROJ-12-onboarding) ─────────────────
+        // 5 attempts per minute per IP to prevent mass email enumeration.
+        // Per-email and per-IP hard caps (10/hour) are enforced in the controller.
+        RateLimiter::for('activation', function (Request $request) {
+            return Limit::perMinute(5)->by('activation:' . $request->ip());
+        });
     }
 }

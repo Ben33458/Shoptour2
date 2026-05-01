@@ -48,13 +48,17 @@ class Tour extends Model
         'regular_delivery_tour_id',
         'driver_employee_id',
         'status',
+        'started_at',
+        'ended_at',
     ];
 
     /**
      * @var array<string, string>
      */
     protected $casts = [
-        'tour_date' => 'date',
+        'tour_date'  => 'date',
+        'started_at' => 'datetime',
+        'ended_at'   => 'datetime',
     ];
 
     // -------------------------------------------------------------------------

@@ -8,9 +8,12 @@ use App\Models\Address;
 use App\Models\Admin\OrderAdjustment;
 use App\Models\Delivery\RegularDeliveryTour;
 use App\Models\Delivery\TourStop;
+use App\Models\Event\EventLocation;
 use App\Models\Inventory\Warehouse;
 use App\Models\Pricing\Customer;
 use App\Models\Pricing\CustomerGroup;
+use App\Models\Rental\RentalBookingItem;
+use App\Models\Rental\RentalReturnSlip;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -120,6 +123,35 @@ class Order extends Model
         'total_pfand_brutto_milli',
         'notes',
         'customer_notes',
+        'is_event_order',
+        'event_location_id',
+        'event_location_name',
+        'event_location_street',
+        'event_location_zip',
+        'event_location_city',
+        'event_contact_name',
+        'event_contact_phone',
+        'event_access_notes',
+        'event_setup_notes',
+        'event_has_power',
+        'event_suitable_ground',
+        'desired_delivery_date',
+        'desired_delivery_window_from',
+        'desired_delivery_window_until',
+        'desired_pickup_date',
+        'desired_pickup_window_from',
+        'desired_pickup_window_until',
+        'confirmed_delivery_window_from',
+        'confirmed_delivery_window_until',
+        'confirmed_pickup_window_from',
+        'confirmed_pickup_window_until',
+        'logistics_class',
+        'event_delivery_mode',
+        'event_pickup_mode',
+        'prepayment_required_milli',
+        'prepayment_due_date',
+        'prepayment_received',
+        'distance_km',
     ];
 
     /**
@@ -129,10 +161,18 @@ class Order extends Model
         'has_backorder'            => 'boolean',
         'immediate_payment'        => 'boolean',
         'is_pos_sale'              => 'boolean',
+        'is_event_order'           => 'boolean',
+        'event_has_power'          => 'boolean',
+        'event_suitable_ground'    => 'boolean',
+        'prepayment_received'      => 'boolean',
         'total_net_milli'          => 'integer',
         'total_gross_milli'        => 'integer',
         'total_pfand_brutto_milli' => 'integer',
+        'prepayment_required_milli' => 'integer',
         'delivery_date'            => 'date',
+        'desired_delivery_date'    => 'date',
+        'desired_pickup_date'      => 'date',
+        'prepayment_due_date'      => 'date',
     ];
 
     // -------------------------------------------------------------------------
@@ -215,5 +255,33 @@ class Order extends Model
     public function tourStop(): HasOne
     {
         return $this->hasOne(TourStop::class);
+    }
+
+    /**
+     * The event location for this order (when is_event_order = true).
+     */
+    public function eventLocation(): BelongsTo
+    {
+        return $this->belongsTo(EventLocation::class);
+    }
+
+    /**
+     * All rental booking items for this order.
+     *
+     * @return HasMany<RentalBookingItem>
+     */
+    public function rentalBookingItems(): HasMany
+    {
+        return $this->hasMany(RentalBookingItem::class);
+    }
+
+    /**
+     * The rental return slip for this order.
+     *
+     * @return HasOne<RentalReturnSlip>
+     */
+    public function returnSlip(): HasOne
+    {
+        return $this->hasOne(RentalReturnSlip::class);
     }
 }

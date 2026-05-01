@@ -9,14 +9,18 @@ use App\Http\Requests\Shop\StoreCheckoutRequest;
 use App\Models\Address;
 use App\Models\Admin\DeferredTask;
 use App\Models\Delivery\RegularDeliveryTour;
+use App\Models\Event\EventLocation;
 use App\Models\Inventory\Warehouse;
 use App\Models\Orders\Order;
 use App\Models\Pricing\Customer;
 use App\Models\User;
+use App\Services\Catalog\JugendschutzService;
 use App\Services\Orders\OrderNumberService;
 use App\Services\Orders\OrderService;
 use App\Services\Payments\ShopPayPalService;
 use App\Services\Payments\ShopStripeService;
+use App\Services\Rental\RentalBookingService;
+use App\Services\Rental\RentalCartService;
 use App\Services\Shop\CartService;
 use App\Services\Shop\TourAssignmentService;
 use Illuminate\Http\RedirectResponse;
@@ -45,6 +49,7 @@ class CheckoutController extends Controller
         private readonly OrderService          $orderService,
         private readonly OrderNumberService    $orderNumberService,
         private readonly TourAssignmentService $tourAssignmentService,
+        private readonly RentalCartService     $rentalCart,
     ) {}
 
     /**
@@ -68,12 +73,23 @@ class CheckoutController extends Controller
                 ->update(['status' => Order::STATUS_CANCELLED]);
         }
 
-        if ($this->cart->isEmpty($user)) {
+        $rentalSummary  = $this->rentalCart->getItemsSummary();
+        $hasRentalItems = $rentalSummary->isNotEmpty();
+
+        if ($this->cart->isEmpty($user) && ! $hasRentalItems) {
             return redirect()->route('cart.index')->with('info', 'Dein Warenkorb ist leer.');
         }
 
-        // Load cart with full pricing data
-        $cartData = $this->cart->calculate($user);
+        // Load cart with full pricing data (may be empty for rental-only orders)
+        $cartData = $this->cart->isEmpty($user) ? [
+            'items'               => [],
+            'subtotal_net_milli'  => 0,
+            'subtotal_gross_milli'=> 0,
+            'pfand_total_milli'   => 0,
+            'tax_breakdown'       => [],
+            'total_milli'         => 0,
+            'has_unavailable'     => false,
+        ] : $this->cart->calculate($user);
 
         // Block checkout if any item is unavailable
         if ($cartData['has_unavailable']) {
@@ -118,14 +134,28 @@ class CheckoutController extends Controller
             $customerTourId = $existingTour->regular_delivery_tour_id;
         }
 
+        $rentalFrom     = $this->rentalCart->getDateFrom();
+        $rentalUntil    = $this->rentalCart->getDateUntil();
+        $rentalTotal    = $this->rentalCart->totalNetMilli();
+
+        $minAge = JugendschutzService::cartMinAge($cartData['items']);
+
         return view('shop.checkout', [
             'customer'              => $customer,
             'cartData'              => $cartData,
+            'minAge'                => $minAge,
             'allowedPaymentMethods' => $allowedPaymentMethods,
             'pickupLocations'       => $pickupLocations,
             'tours'                 => $tours,
             'customerTourId'        => $customerTourId,
             'defaultAddress'        => $defaultAddress,
+            'hasRentalItems'        => $hasRentalItems,
+            'hasProducts'           => ! empty($cartData['items']),
+            'eventLocations'        => EventLocation::where('active', true)->orderBy('name')->get(),
+            'rentalSummary'         => $rentalSummary,
+            'rentalFrom'            => $rentalFrom,
+            'rentalUntil'           => $rentalUntil,
+            'rentalTotal'           => $rentalTotal,
         ]);
     }
 
@@ -142,11 +172,23 @@ class CheckoutController extends Controller
         /** @var User $user */
         $user = Auth::user();
 
-        if ($this->cart->isEmpty($user)) {
+        $validated = $request->validated();
+
+        // Capture rental cart state before anything modifies session
+        $rentalCartData = $this->rentalCart->get();
+        $hasRental      = ! $this->rentalCart->isEmpty();
+
+        if ($this->cart->isEmpty($user) && ! $hasRental) {
             return redirect()->route('cart.index')->with('info', 'Dein Warenkorb ist leer.');
         }
+        $eventData      = $hasRental ? array_intersect_key($validated, array_flip([
+            'event_location_name', 'event_location_street', 'event_location_zip',
+            'event_location_city', 'event_contact_name', 'event_contact_phone',
+            'event_delivery_mode', 'event_pickup_mode',
+            'event_access_notes', 'event_setup_notes',
+            'event_has_power', 'event_suitable_ground',
+        ])) : [];
 
-        $validated = $request->validated();
         $customer->load('customerGroup');
 
         // Validate payment method is allowed for customer's group
@@ -157,7 +199,7 @@ class CheckoutController extends Controller
         }
 
         // Build items array from cart
-        $lines = $this->cart->items($user);
+        $lines = $this->cart->isEmpty($user) ? [] : $this->cart->items($user);
         $items = [];
         foreach ($lines as $line) {
             $items[] = [
@@ -166,14 +208,22 @@ class CheckoutController extends Controller
             ];
         }
 
-        if (empty($items)) {
-            return redirect()->route('cart.index');
-        }
-
         // Resolve or create delivery address
         $deliveryAddressId = null;
         if ($validated['delivery_type'] === Order::DELIVERY_HOME) {
             $deliveryAddressId = $this->resolveDeliveryAddress($validated, $customer);
+        }
+
+        // If rental order but no explicit event location address given,
+        // fall back to the delivery address so the booking has location data.
+        if ($hasRental && empty($eventData['event_location_name']) && $deliveryAddressId) {
+            $addr = Address::find($deliveryAddressId);
+            if ($addr) {
+                $eventData['event_location_name']   = $addr->company ?: trim(($addr->first_name ?? '') . ' ' . ($addr->last_name ?? ''));
+                $eventData['event_location_street']  = trim(($addr->street ?? '') . ' ' . ($addr->house_number ?? ''));
+                $eventData['event_location_zip']     = $addr->zip ?? '';
+                $eventData['event_location_city']    = $addr->city ?? '';
+            }
         }
 
         // Resolve tour
@@ -194,35 +244,59 @@ class CheckoutController extends Controller
 
         try {
             $order = DB::transaction(function () use (
-                $customer, $items, $validated, $deliveryAddressId, $tourId
+                $customer, $items, $validated, $deliveryAddressId, $tourId,
+                $hasRental, $rentalCartData, $eventData
             ): Order {
                 // 1. Generate order number
                 $orderNumber = $this->orderNumberService->generate();
 
-                // 2. Create the order via OrderService (handles pricing snapshots)
-                $order = $this->orderService->createOrder(
-                    customer:     $customer,
-                    items:        $items,
-                    deliveryDate: $validated['delivery_date']
-                        ? \Carbon\Carbon::parse($validated['delivery_date'])
-                        : null,
-                );
+                if (! empty($items)) {
+                    // 2a. Standard order: create via OrderService (handles pricing snapshots)
+                    $order = $this->orderService->createOrder(
+                        customer:     $customer,
+                        items:        $items,
+                        deliveryDate: $validated['delivery_date']
+                            ? \Carbon\Carbon::parse($validated['delivery_date'])
+                            : null,
+                    );
 
-                // 3. Update order with checkout-specific fields
-                $updateData = [
-                    'order_number'             => $orderNumber,
-                    'delivery_type'            => $validated['delivery_type'],
-                    'payment_method'           => $validated['payment_method'],
-                    'customer_notes'           => $validated['customer_notes'] ?? null,
-                    'delivery_address_id'      => $deliveryAddressId,
-                    'regular_delivery_tour_id' => $tourId,
-                ];
+                    $updateData = [
+                        'order_number'             => $orderNumber,
+                        'delivery_type'            => $validated['delivery_type'],
+                        'payment_method'           => $validated['payment_method'],
+                        'customer_notes'           => $validated['customer_notes'] ?? null,
+                        'delivery_address_id'      => $deliveryAddressId,
+                        'regular_delivery_tour_id' => $tourId,
+                    ];
 
-                if ($validated['delivery_type'] === Order::DELIVERY_PICKUP) {
-                    $updateData['pickup_location_id'] = $validated['pickup_warehouse_id'];
+                    if ($validated['delivery_type'] === Order::DELIVERY_PICKUP) {
+                        $updateData['pickup_location_id'] = $validated['pickup_warehouse_id'];
+                    }
+
+                    $order->update($updateData);
+                } else {
+                    // 2b. Rental-only order: create a minimal order without product items
+                    $order = Order::create([
+                        'company_id'                  => $customer->company_id ?? 1,
+                        'order_number'               => $orderNumber,
+                        'customer_id'                => $customer->id,
+                        'customer_group_id_snapshot' => $customer->customer_group_id,
+                        'status'                     => Order::STATUS_PENDING,
+                        'delivery_type'              => $validated['delivery_type'],
+                        'payment_method'             => $validated['payment_method'],
+                        'customer_notes'             => $validated['customer_notes'] ?? null,
+                        'delivery_address_id'        => $deliveryAddressId,
+                        'regular_delivery_tour_id'   => $tourId,
+                        'total_net_milli'            => 0,
+                        'total_gross_milli'          => 0,
+                    ]);
                 }
 
-                $order->update($updateData);
+                // 3. Attach rental items if present (within same transaction)
+                if ($hasRental) {
+                    app(RentalBookingService::class)
+                        ->attachToOrder($order, $customer, $rentalCartData, $eventData);
+                }
 
                 return $order;
             });
@@ -236,8 +310,13 @@ class CheckoutController extends Controller
                 ->withErrors('Beim Erstellen deiner Bestellung ist ein Fehler aufgetreten. Bitte versuche es erneut.');
         }
 
-        // Clear the cart AFTER successful order creation
+        // Clear the product cart AFTER successful order creation
         $this->cart->clear($user);
+
+        // Clear rental cart if items were attached to the order
+        if ($hasRental) {
+            $this->rentalCart->clear();
+        }
 
         // BUG-6 fix: persist chosen tour as customer's Stamm-Tour for future orders.
         if ($tourId && $customer->regular_delivery_tour_id === null) {
@@ -336,6 +415,26 @@ class CheckoutController extends Controller
     private function resolveDeliveryAddress(array $validated, Customer $customer): ?int
     {
         $addressId = $validated['delivery_address_id'] ?? null;
+
+        // EventLocation selected as delivery address
+        if ($addressId === 'event_location') {
+            $locId = (int) ($validated['event_location_delivery_id'] ?? 0);
+            $loc   = EventLocation::find($locId);
+            if (! $loc) {
+                return null;
+            }
+            $address = Address::create([
+                'customer_id'  => $customer->id,
+                'company_id'   => $customer->company_id,
+                'type'         => 'delivery',
+                'is_default'   => false,
+                'company'      => $loc->name,
+                'street'       => $loc->street ?? '',
+                'zip'          => $loc->zip ?? '',
+                'city'         => $loc->city ?? '',
+            ]);
+            return $address->id;
+        }
 
         if ($addressId === 'new' || $addressId === null) {
             // Create new address from inline form
@@ -489,7 +588,19 @@ class CheckoutController extends Controller
     {
         /** @var User|null $user */
         $user = Auth::user();
-        if ($user === null || ! $user->isKunde()) {
+        if ($user === null) {
+            return null;
+        }
+
+        if ($user->isSubUser()) {
+            $subUser = $user->subUser;
+            if (! $subUser?->active) {
+                return null;
+            }
+            return $subUser->parentCustomer;
+        }
+
+        if (! $user->isKunde()) {
             return null;
         }
 

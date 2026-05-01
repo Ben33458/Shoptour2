@@ -10,7 +10,21 @@
       "Bash(echo \"NO DESIGN:  $f\")",
       "Bash(fi)",
       "Bash(done)",
-      "Read(//d/Claude_Code/Getraenkeshop/**)"
+      "Read(//d/Claude_Code/Getraenkeshop/**)",
+      "Bash(grep -A 50 \"Schema::create\\(''''customers''''\" /srv/shoptour2/database/migrations/*.php)",
+      "Bash(grep -A 100 \"Schema::create\\(''''products''''\" /srv/shoptour2/database/migrations/*.php)",
+      "Read(//usr/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(find /srv/shoptour2 -name *.sh)",
+      "Bash(git -C /srv/shoptour2 diff --name-only)",
+      "Bash(git -C /srv/shoptour2 ls-files --others --exclude-standard)",
+      "Bash(docker exec:*)",
+      "Bash(grep:*)",
+      "Bash(php -l app/Http/Controllers/Employee/MeinController.php)",
+      "Bash(/usr/bin/php8.2 -l app/Http/Controllers/Employee/MeinController.php)",
+      "Bash(/usr/bin/php8.2 artisan:*)",
+      "Bash(find /usr -name php* -type f)",
+      "Bash(git -C /srv/shoptour2 log --oneline --all)"
     ]
   }
 }

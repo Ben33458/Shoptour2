@@ -55,6 +55,22 @@
     </div>
 </div>
 
+{{-- ── Jugendschutz-Hinweis ── --}}
+@if($minAge > 0)
+<div class="card" style="margin-bottom:16px;border-left:4px solid var(--c-danger,#dc2626)">
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px">
+        <svg style="width:20px;height:20px;flex-shrink:0;color:var(--c-danger,#dc2626)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <div>
+            <strong>Jugendschutz — Abgabe ab {{ $minAge }} Jahren</strong><br>
+            <span style="font-size:13px">{{ \App\Services\Catalog\JugendschutzService::deliveryNote($minAge) }}</span>
+        </div>
+    </div>
+</div>
+@endif
+
 {{-- ── Delivery stop info ── --}}
 @if($stop)
 <div class="card" style="margin-bottom:16px">

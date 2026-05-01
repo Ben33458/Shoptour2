@@ -50,6 +50,14 @@ class DriverEvent extends Model
      * becomes part of the driver event log.
      */
     public const TYPE_UPLOAD               = 'upload';
+    public const TYPE_TOUR_START           = 'tour_start';
+    public const TYPE_TOUR_END             = 'tour_end';
+    public const TYPE_DEPART               = 'depart';
+    public const TYPE_CASH_TRANSACTION     = 'cash_transaction';
+    public const TYPE_LEERGUTAUSGLEICH     = 'leergutausgleich';
+    public const TYPE_RENTAL_RETURN        = 'rental_return';
+    public const TYPE_VOLLGUT_KASTEN       = 'vollgut_kasten';
+    public const TYPE_VOLLGUT_FASS         = 'vollgut_fass';
 
     // apply_status values
     public const STATUS_PENDING  = 'pending';

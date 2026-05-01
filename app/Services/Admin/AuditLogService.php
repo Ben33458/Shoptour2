@@ -35,6 +35,7 @@ class AuditLogService
         ?object $subject  = null,
         array   $meta     = [],
         ?int    $tokenId  = null,
+        string  $level    = 'info',
     ): AuditLog {
         // Resolve company from IoC (set by CompanyMiddleware; null on CLI/tests)
         $company = null;
@@ -49,6 +50,7 @@ class AuditLogService
             'company_id'   => $company?->id,
             'token_id'     => $tokenId,
             'action'       => $action,
+            'level'        => $level,
             'subject_type' => $subject !== null ? class_basename($subject) : null,
             'subject_id'   => $subject !== null && property_exists($subject, 'id') ? $subject->id : null,
             'meta_json'    => ! empty($meta) ? $meta : null,

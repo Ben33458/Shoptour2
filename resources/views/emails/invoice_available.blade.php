@@ -1,42 +1,24 @@
-<!DOCTYPE html>
-<html lang="de">
-<head><meta charset="UTF-8"><title>Rechnung verf\u00fcgbar</title></head>
-<body style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+<x-mail::message>
 
-<h2>Ihre Rechnung ist verf\u00fcgbar</h2>
+Sehr geehrte Damen und Herren,
 
-<p>Sehr geehrte Damen und Herren,</p>
+Ihre Rechnung **{{ $invoice->invoice_number }}** vom {{ $invoice->finalized_at?->format('d.m.Y') }} wurde erstellt.
 
-<p>
-    Ihre Rechnung <strong>{{ $invoice->invoice_number }}</strong>
-    vom {{ $invoice->finalized_at?->format('d.m.Y') }}
-    wurde erstellt.
-</p>
+<x-mail::table>
+| | |
+|:---|---:|
+| Nettobetrag | {{ number_format($invoice->total_net_milli / 1_000_000, 2, ',', '.') }} € |
+| MwSt. | {{ number_format($invoice->total_tax_milli / 1_000_000, 2, ',', '.') }} € |
+| **Gesamtbetrag** | **{{ number_format($invoice->total_gross_milli / 1_000_000, 2, ',', '.') }} €** |
+</x-mail::table>
 
-<table style="width:100%; border-collapse: collapse; margin: 20px 0;">
-    <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #eee;">Nettobetrag</td>
-        <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">
-            {{ number_format($invoice->total_net_milli / 1_000_000, 2, ',', '.') }} \u20ac
-        </td>
-    </tr>
-    <tr>
-        <td style="padding: 8px 0; border-bottom: 1px solid #eee;">MwSt.</td>
-        <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-align: right;">
-            {{ number_format($invoice->total_tax_milli / 1_000_000, 2, ',', '.') }} \u20ac
-        </td>
-    </tr>
-    <tr>
-        <td style="padding: 8px 4px; font-weight: bold;">Gesamtbetrag</td>
-        <td style="padding: 8px 4px; font-weight: bold; text-align: right;">
-            {{ number_format($invoice->total_gross_milli / 1_000_000, 2, ',', '.') }} \u20ac
-        </td>
-    </tr>
-</table>
+Die Rechnung steht Ihnen im Kundenportal zum Download bereit.
 
-<p>Die Rechnung steht Ihnen im Kundenportal zum Download bereit.</p>
+<x-mail::button :url="config('app.url') . '/mein-konto/rechnungen'">
+Rechnung herunterladen
+</x-mail::button>
 
-<p>Mit freundlichen Gr\u00fc\u00dfen</p>
+Mit freundlichen Grüßen,
+{{ config('app.name') }}
 
-</body>
-</html>
+</x-mail::message>

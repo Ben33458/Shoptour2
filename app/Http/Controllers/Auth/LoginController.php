@@ -71,7 +71,7 @@ class LoginController extends Controller
         $user = Auth::user();
 
         return redirect()->intended(
-            $user->hasAdminAccess() ? route('admin.orders.index') : '/mein-konto'
+            $user->hasAdminAccess() ? route('admin.dashboard') : '/mein-konto'
         );
     }
 

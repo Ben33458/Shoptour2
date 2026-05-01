@@ -146,4 +146,146 @@ class ProductLmivVersion extends Model
     {
         return data_get($this->data_json ?? [], $key, $default);
     }
+
+    // ── Property accessors (used by shop/product.blade.php) ───────────────────
+    // These map view-facing names to the actual data_json keys.
+
+    public function getZutatenAttribute(): ?string
+    {
+        return $this->dataGet('zutaten');
+    }
+
+    public function getAllergeneAttribute(): ?string
+    {
+        return $this->dataGet('allergene');
+    }
+
+    public function getHerkunftslandAttribute(): ?string
+    {
+        return $this->dataGet('herkunftsland');
+    }
+
+    /** Mapped from data_json key "hersteller" */
+    public function getHerstellerNameAttribute(): ?string
+    {
+        return $this->dataGet('hersteller');
+    }
+
+    /** Mapped from data_json key "herstelleranschrift" */
+    public function getHerstellerAnschriftAttribute(): ?string
+    {
+        return $this->dataGet('herstelleranschrift');
+    }
+
+    public function getNaehrwertEnergieKjAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_energie_kj') ?? $this->dataGet('nutrition.energy_kj');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertEnergieKcalAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_energie_kcal') ?? $this->dataGet('nutrition.energy_kcal');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertFettAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_fett') ?? $this->dataGet('nutrition.fat');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertGesaettigteFettsaeurenAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_fett_gesaettigt') ?? $this->dataGet('nutrition.fat_saturated');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertKohlenhydrateAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_kohlenhydrate') ?? $this->dataGet('nutrition.carbohydrates');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertZuckerAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_zucker') ?? $this->dataGet('nutrition.sugar');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertEiweissAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_eiweiss') ?? $this->dataGet('nutrition.protein');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertSalzAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_salz') ?? $this->dataGet('nutrition.salt');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertNatriumAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_natrium') ?? $this->dataGet('nutrition.sodium');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertCalciumAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_calcium');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertMagnesiumAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_magnesium');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertHydrogencarbonatAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_hydrogencarbonat');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertKaliumAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_kalium');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertChloridAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_chlorid');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertSulfatAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_sulfat');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertFluoridAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_fluorid');
+        return $v !== null ? (float) $v : null;
+    }
+
+    public function getNaehrwertKieselsaeureAttribute(): int|float|null
+    {
+        $v = $this->dataGet('nw_kieselsaeure');
+        return $v !== null ? (float) $v : null;
+    }
+
+    /**
+     * Alkoholgehalt in % vol. (LMIV-Pflichtangabe für Getränke mit > 1,2 % vol.)
+     * Gespeichert als decimal, z.B. 4.8 für 4,8 % vol.
+     */
+    public function getAlkoholgehaltAttribute(): ?float
+    {
+        $v = $this->dataGet('alkoholgehalt');
+        return $v !== null ? (float) $v : null;
+    }
 }

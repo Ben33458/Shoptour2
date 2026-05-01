@@ -10,6 +10,7 @@ use App\Models\Catalog\Category;
 use App\Models\Catalog\Gebinde;
 use App\Models\Catalog\Product;
 use App\Models\Catalog\Warengruppe;
+use App\Models\CustomerFavorite;
 use App\Models\Pricing\AppSetting;
 use App\Models\Pricing\CustomerGroup;
 use App\Services\Orders\PfandCalculator;
@@ -54,6 +55,9 @@ class ShopController extends Controller
         // ── Resolve customer / customer group for pricing + cache key ────────
         $customer      = $this->resolveCustomer();
         $customerGroup = $this->resolveCustomerGroup($customer);
+
+        // ── Resolve display preferences ──────────────────────────────────────
+        $displaySettings = $this->resolveDisplaySettings($customer, $request);
         $groupId       = $customerGroup?->id ?? 0;
 
         // ── Cache key ────────────────────────────────────────────────────────
@@ -65,8 +69,10 @@ class ShopController extends Controller
         $cacheKey    = "{$cachePrefix}.{$filterHash}.page{$page}";
 
         // ── Cached product query ─────────────────────────────────────────────
+        $itemsPerPage = $displaySettings['items_per_page'];
+
         $products = Cache::remember($cacheKey, 300, function () use (
-            $categoryId, $brandId, $gebindeId, $warengruppeId, $search, $sort, $page
+            $categoryId, $brandId, $gebindeId, $warengruppeId, $search, $sort, $page, $itemsPerPage
         ) {
             $query = Product::with([
                 'brand',
@@ -121,18 +127,19 @@ class ShopController extends Controller
                 default     => $query->orderBy('produktname'),
             };
 
-            return $query->paginate(24, ['*'], 'page', $page)->withQueryString();
+            return $query->paginate($itemsPerPage, ['*'], 'page', $page)->withQueryString();
         });
 
         // ── Load filter sidebar data ─────────────────────────────────────────
         $categories    = Category::whereNull('parent_id')->with('children')->orderBy('name')->get();
         $brands        = Brand::orderBy('name')->get();
         $gebindeList   = Gebinde::where('active', true)->orderBy('name')->get();
-        $warengruppen  = Warengruppe::where('active', true)->orderBy('name')->get();
+        $warengruppen  = Warengruppe::where('active', true)->withCount('products')->orderBy('name')->get();
 
         // ── Compute prices and pfand per product ─────────────────────────────
         $priceData       = [];
-        $priceDisplayMode = $customerGroup?->price_display_mode ?? CustomerGroup::DISPLAY_BRUTTO;
+        $priceDisplayMode = $customer?->price_display_mode
+            ?: ($customerGroup?->price_display_mode ?? CustomerGroup::DISPLAY_BRUTTO);
         $isBusiness       = $customerGroup?->is_business ?? false;
 
         foreach ($products as $product) {
@@ -164,6 +171,15 @@ class ShopController extends Controller
             ];
         }
 
+        // Favorite product IDs for the heart button (authenticated customers only)
+        $favoriteProductIds = [];
+        if ($customer) {
+            $favoriteProductIds = CustomerFavorite::where('customer_id', $customer->id)
+                ->pluck('product_id')
+                ->flip()
+                ->all();
+        }
+
         return view('shop.index', compact(
             'products',
             'categories',
@@ -179,6 +195,8 @@ class ShopController extends Controller
             'warengruppeId',
             'search',
             'sort',
+            'favoriteProductIds',
+            'displaySettings',
         ));
     }
 
@@ -196,12 +214,12 @@ class ShopController extends Controller
             'images',
             'brand',
             'productLine',
-            'category',
-            'warengruppe',
+            'category.parent',
             'gebinde.pfandSet.components.pfandItem',
             'gebinde.pfandSet.components.childPfandSet',
             'taxRate',
             'activeLmivVersion',
+            'baseItem.activeLmivVersion',
             'barcodes',
             'stocks',
         ]);
@@ -227,7 +245,8 @@ class ShopController extends Controller
             ? $this->pfandCalculator->totalForGebinde($product->gebinde)
             : 0;
 
-        $priceDisplayMode = $customerGroup?->price_display_mode ?? CustomerGroup::DISPLAY_BRUTTO;
+        $priceDisplayMode = $customer?->price_display_mode
+            ?: ($customerGroup?->price_display_mode ?? CustomerGroup::DISPLAY_BRUTTO);
         $isBusiness       = $customerGroup?->is_business ?? false;
 
         // Stock-based availability check
@@ -242,6 +261,13 @@ class ShopController extends Controller
         // SEO: Schema.org JSON-LD (pass real stock status)
         $schemaOrg = $this->buildSchemaOrg($product, $price, $pfand, $stockAvailable);
 
+        $isFavorite = false;
+        if ($customer) {
+            $isFavorite = CustomerFavorite::where('customer_id', $customer->id)
+                ->where('product_id', $product->id)
+                ->exists();
+        }
+
         return view('shop.product', compact(
             'product',
             'price',
@@ -251,7 +277,45 @@ class ShopController extends Controller
             'bundleComponents',
             'schemaOrg',
             'stockAvailable',
+            'isFavorite',
         ));
+    }
+
+    // =========================================================================
+    // POST /ansicht  — update display preferences (guests: session; customers: DB)
+    // =========================================================================
+
+    public function updateDisplayPreferences(\Illuminate\Http\Request $request): \Illuminate\Http\RedirectResponse
+    {
+        $availableViews = json_decode(
+            AppSetting::get('shop.display.available_views', '["grid_large","grid_compact","list_images","list_no_images","table"]'),
+            true
+        ) ?: ['grid_large'];
+
+        $validated = $request->validate([
+            'view_mode'      => ['required', 'string', 'in:' . implode(',', $availableViews)],
+            'items_per_page' => ['required', 'integer', 'in:24,48,96'],
+        ]);
+
+        $customer = $this->resolveCustomer();
+
+        if ($customer) {
+            $prefs = $customer->display_preferences ?? [];
+            $customer->update([
+                'display_preferences' => array_merge($prefs, [
+                    'view_mode'      => $validated['view_mode'],
+                    'items_per_page' => (int) $validated['items_per_page'],
+                ]),
+            ]);
+        } else {
+            $prefs = session('shop_display_prefs', []);
+            session(['shop_display_prefs' => array_merge($prefs, [
+                'view_mode'      => $validated['view_mode'],
+                'items_per_page' => (int) $validated['items_per_page'],
+            ])]);
+        }
+
+        return redirect()->back();
     }
 
     // =========================================================================
@@ -270,6 +334,45 @@ class ShopController extends Controller
     // =========================================================================
 
     /**
+     * Resolve the effective display settings for this request.
+     * Priority: customer preferences > session (guest) > admin defaults.
+     *
+     * @return array{view_mode:string, items_per_page:int, show_article_number:bool, show_deposit_separately:bool, description_mode:string, hide_unavailable:bool, show_stammsortiment_badge:bool, show_new_badge:bool, available_views:list<string>}
+     */
+    private function resolveDisplaySettings(?\App\Models\Pricing\Customer $customer, \Illuminate\Http\Request $request): array
+    {
+        $availableViews   = json_decode(AppSetting::get('shop.display.available_views', '["grid_large","grid_compact","list_images","list_no_images","table"]'), true) ?: ['grid_large'];
+        $defaultView      = AppSetting::get('shop.display.default_view', 'grid_large');
+        $defaultPerPage   = (int) AppSetting::get('shop.display.default_items_per_page', '24');
+
+        // Customer or session preference
+        $prefs = $customer?->display_preferences ?? session('shop_display_prefs', []);
+
+        $viewMode   = $prefs['view_mode'] ?? $defaultView;
+        $perPage    = (int) ($prefs['items_per_page'] ?? $defaultPerPage);
+
+        // Guard: ensure chosen view is still enabled
+        if (! in_array($viewMode, $availableViews, true)) {
+            $viewMode = $defaultView;
+        }
+        if (! in_array($perPage, [24, 48, 96], true)) {
+            $perPage = $defaultPerPage;
+        }
+
+        return [
+            'view_mode'               => $viewMode,
+            'items_per_page'          => $perPage,
+            'available_views'         => $availableViews,
+            'show_article_number'     => AppSetting::get('shop.display.show_article_number', '0') === '1',
+            'show_deposit_separately' => AppSetting::get('shop.display.show_deposit_separately', '1') === '1',
+            'description_mode'        => AppSetting::get('shop.display.description_mode', 'short'),
+            'hide_unavailable'        => AppSetting::get('shop.display.hide_unavailable', '0') === '1',
+            'show_stammsortiment_badge' => AppSetting::get('shop.display.show_stammsortiment_badge', '1') === '1',
+            'show_new_badge'          => AppSetting::get('shop.display.show_new_badge', '1') === '1',
+        ];
+    }
+
+    /**
      * Returns the Customer model for the logged-in user, or null for guests.
      */
     private function resolveCustomer(): ?\App\Models\Pricing\Customer
@@ -279,6 +382,10 @@ class ShopController extends Controller
         }
         /** @var \App\Models\User $user */
         $user = Auth::user();
+
+        if ($user->isSubUser()) {
+            return $user->subUser?->parentCustomer;
+        }
 
         return $user->customer;
     }
