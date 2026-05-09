@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Admin;
 
+use App\Models\Admin\DeferredTask;
 use App\Models\Admin\Invoice;
 use App\Models\Admin\InvoiceItem;
 use App\Models\Admin\OrderAdjustment;
@@ -14,7 +15,6 @@ use App\Services\Integrations\LexofficeSync;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -83,6 +83,18 @@ class InvoiceService
                 ->keyBy('product_id')
                 ->map(static fn (SupplierProduct $sp): int => $sp->purchase_price_milli);
 
+            // Reject draft if any order item is missing a tax rate (silent fallback removed, see PROJ-13)
+            $itemsWithoutTax = $order->items->filter(
+                static fn ($item) => $item->tax_rate_basis_points === null
+            );
+            if ($itemsWithoutTax->isNotEmpty()) {
+                $ids = $itemsWithoutTax->pluck('id')->implode(', ');
+                throw new RuntimeException(
+                    "Order #{$order->id}: OrderItems #{$ids} haben keinen Steuersatz (tax_rate_basis_points). "
+                    . 'Draft kann nicht erstellt werden — bitte Bestellung prüfen.'
+                );
+            }
+
             $totalNetMilli   = 0;
             $totalGrossMilli = 0;
             $totalTaxMilli   = 0;
@@ -114,7 +126,7 @@ class InvoiceService
                     'qty'                     => $qty,
                     'unit_price_net_milli'    => $orderItem->unit_price_net_milli,
                     'unit_price_gross_milli'  => $orderItem->unit_price_gross_milli,
-                    'tax_rate_basis_points'   => $orderItem->tax_rate_basis_points ?? 1_900,
+                    'tax_rate_basis_points'   => $orderItem->tax_rate_basis_points,
                     'line_total_net_milli'    => $lineTotalNetMilli,
                     'line_total_gross_milli'  => $lineTotalGrossMilli,
                     // WP-16: snapshot unit purchase price for margin reporting
@@ -201,10 +213,11 @@ class InvoiceService
         return DB::transaction(function () use ($invoice): Invoice {
             $invoice->load('items', 'order.customer');
 
-            // Assign next invoice number
+            // Assign next invoice number — lock rows to prevent concurrent duplicate numbers
             $year       = now()->year;
             $lastNumber = Invoice::where('invoice_number', 'LIKE', self::INVOICE_PREFIX . "-{$year}-%")
                 ->whereNotNull('invoice_number')
+                ->lockForUpdate()
                 ->count();
             $seq        = $lastNumber + 1;
             $invoiceNum = sprintf('%s-%d-%05d', self::INVOICE_PREFIX, $year, $seq);
@@ -248,31 +261,21 @@ class InvoiceService
                 }
             }
 
-            // WP-17: Send InvoiceAvailable notification email.
-            // Non-blocking — finalization succeeds even if mail dispatch fails.
-            try {
-                $customer = $invoice->order->customer ?? null;
-                if ($customer?->email) {
-                    Mail::to($customer->email)
-                        ->send(new \App\Mail\InvoiceAvailable($invoice));
-
-                    $this->auditLog->log('invoice.mail.sent', $invoice, [
-                        'invoice_number' => $invoice->invoice_number,
-                        'recipient'      => $customer->email,
-                        'customer_nr'    => $customer->customer_number,
-                    ]);
-                }
-            } catch (\Throwable $e) {
-                Log::error('InvoiceAvailable mail failed for invoice ' . $invoice->id, [
-                    'error' => $e->getMessage(),
+            // WP-17: Queue InvoiceAvailable email via deferred_tasks.
+            // Avoids blocking the finalize transaction on SMTP latency (shared hosting).
+            $customer = $invoice->order->customer ?? null;
+            if ($customer?->email) {
+                DeferredTask::create([
+                    'company_id'   => $invoice->company_id,
+                    'type'         => 'email.invoice_available',
+                    'payload_json' => json_encode([
+                        'invoice_id' => $invoice->id,
+                        'email'      => $customer->email,
+                    ]),
+                    'status'       => DeferredTask::STATUS_PENDING,
+                    'attempts'     => 0,
+                    'max_attempts' => 3,
                 ]);
-
-                $this->auditLog->log('invoice.mail.failed', $invoice, [
-                    'invoice_number' => $invoice->invoice_number ?? null,
-                    'recipient'      => $customer?->email,
-                    'customer_nr'    => $customer?->customer_number,
-                    'error'          => $e->getMessage(),
-                ], level: 'error');
             }
 
             return $invoice;

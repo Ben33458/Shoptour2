@@ -42,3 +42,11 @@ ninox_all_data.json
 # Docker-Compose enthält DB-Passwörter — nicht in git
 docker-compose.yml
 docker-compose.override.yml
+
+# Deployment-Hilfsdateien (nie committen)
+public/install.php
+start-server.bat
+
+# SSH-Keys (gehören in ~/.ssh, nicht ins Projekt)
+githubkey
+githubkey.pub
