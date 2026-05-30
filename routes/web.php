@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\CatalogOverviewController;
 use App\Http\Controllers\Admin\AdminBulkAlkoholController;
+use App\Http\Controllers\Admin\AdminBulkGebindeController;
 use App\Http\Controllers\Admin\AdminPageController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\ReconcileCustomerController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\Admin\DunningRunController;
 use App\Http\Controllers\Admin\AdminLmivController;
 use App\Http\Controllers\Admin\AdminLmivImportController;
 use App\Http\Controllers\Admin\AdminOrderController;
+use App\Http\Controllers\Admin\AdminTablePreferencesController;
 use App\Http\Controllers\Admin\AdminProductController;
 use App\Http\Controllers\Admin\AdminProductImportController;
 use App\Http\Controllers\Admin\AdminReportController;
@@ -46,6 +48,7 @@ use App\Http\Controllers\Admin\AdminProductImageController;
 use App\Http\Controllers\Admin\AdminWarehouseController;
 use App\Http\Controllers\Admin\AdminStockController;
 use App\Http\Controllers\Admin\AdminStockMovementController;
+use App\Http\Controllers\Admin\AdminLeergutZuweisungController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -77,7 +80,13 @@ Route::post('/preferences/dark-mode', [UserPreferenceController::class, 'darkMod
 | Shop (WP-21) — public
 |--------------------------------------------------------------------------
 */
-Route::get('/', [ShopController::class, 'index'])->name('shop.index');
+Route::get('/', function (Request $request) {
+    // nest.kolabri.de is the employee subdomain — send them to the PIN login
+    if ($request->getHost() === 'nest.kolabri.de') {
+        return redirect('/timeclock');
+    }
+    return app(ShopController::class)->index($request);
+})->name('shop.index');
 Route::get('/produkte', [ShopController::class, 'index'])->name('shop.products');
 Route::get('/produkte/{product}', [ShopController::class, 'show'])->name('shop.product');
 
@@ -98,6 +107,11 @@ Route::post('/warenkorb', [CartController::class, 'add'])->name('cart.add')->mid
 Route::patch('/warenkorb/{productId}', [CartController::class, 'update'])->name('cart.update')->middleware('throttle:cart');
 Route::delete('/warenkorb/alle', [CartController::class, 'clear'])->name('cart.clear')->middleware('throttle:cart');
 Route::delete('/warenkorb/{productId}', [CartController::class, 'remove'])->name('cart.remove')->middleware('throttle:cart');
+Route::post('/warenkorb/leergut-ausgleich', [CartController::class, 'leergutAusgleich'])->name('cart.leergut.ausgleich')->middleware('throttle:cart');
+Route::post('/warenkorb/leergut', [CartController::class, 'leergutUpdate'])->name('cart.leergut.update')->middleware('throttle:cart');
+Route::get('/shop/bank-lookup', [\App\Http\Controllers\Shop\BankLookupController::class, '__invoke'])
+    ->name('bank.lookup')
+    ->middleware('throttle:60,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -241,6 +255,10 @@ Route::get('/health/storage', [HealthController::class, 'storage'])->name('healt
 |
 */
 Route::get('/driver/{any?}', function () {
+    // Accept either standard web-auth (admin/mitarbeiter) or PIN session (/mein)
+    if (!Auth::check() && !session()->has('employee_id')) {
+        return redirect()->guest('/anmelden');
+    }
     return view('driver.app');
 })->where('any', '.*');
 
@@ -278,6 +296,7 @@ Route::middleware(['web', 'admin', 'company'])
             ->name('payments.checkout');
     });
 
+
 Route::prefix('admin')
     ->name('admin.')
     ->middleware(['web', 'admin', 'company'])
@@ -291,12 +310,28 @@ Route::prefix('admin')
 
         // ── Orders ─────────────────────────────────────────────────────────
         Route::get('/orders', [AdminOrderController::class, 'index'])->name('orders.index');
+        Route::post('/orders/ninox-sync', [AdminOrderController::class, 'ninoxSync'])->name('orders.ninox-sync');
         Route::get('/orders/{order}', [AdminOrderController::class, 'show'])->name('orders.show');
+
+        // ── Docscan file viewer (admin) ─────────────────────────────────────
+        Route::get('/docscan/{upload}/file', [\App\Http\Controllers\Admin\AdminDocScanFileController::class, 'file'])->name('docscan.file');
 
         // ── Order editing (WP-22) ──────────────────────────────────────────
         Route::get('/orders/{order}/edit', [AdminOrderController::class, 'edit'])->name('orders.edit');
         Route::post('/orders/{order}/items', [AdminOrderController::class, 'updateItems'])->name('orders.items.update');
         Route::post('/orders/{order}/items/add', [AdminOrderController::class, 'addItem'])->name('orders.items.add');
+        Route::post('/orders/{order}/wawi-import', [AdminOrderController::class, 'importFromWawi'])->name('orders.wawi-import');
+        Route::delete('/orders/{order}/items/{item}', [AdminOrderController::class, 'deleteItem'])->name('orders.items.delete');
+
+        // ── Table preferences (per-user column config) ─────────────────────
+        Route::get('/api/table-prefs/{key}', [AdminTablePreferencesController::class, 'show'])->name('table-prefs.show');
+        Route::post('/api/table-prefs/{key}', [AdminTablePreferencesController::class, 'store'])->name('table-prefs.store');
+
+        // ── Rückgabeformular (PDF) ─────────────────────────────────────────
+        Route::get('/orders/{order}/return-form', [AdminOrderController::class, 'returnForm'])
+            ->name('orders.return-form');
+        Route::get('/return-form/blank', [AdminOrderController::class, 'returnFormBlank'])
+            ->name('orders.return-form.blank');
 
         // ── Closeout (Leergut / Bruch) ─────────────────────────────────────
         Route::get('/orders/{order}/closeout', [AdminCloseoutController::class, 'show'])
@@ -318,9 +353,12 @@ Route::prefix('admin')
         // ── Debitoren / Mahnwesen (PROJ-31) ───────────────────────────────
         Route::get('/debitoren', [DebtorController::class, 'index'])->name('debtor.index');
         Route::get('/debitoren/{customer}', [DebtorController::class, 'show'])->name('debtor.show');
+        Route::get('/debitoren/{customer}/edit', fn (\App\Models\Pricing\Customer $customer) => redirect()->route('admin.customers.edit', $customer))->name('debtor.edit');
         Route::post('/debitoren/{customer}/hold', [DebtorController::class, 'toggleHold'])->name('debtor.hold');
         Route::post('/debitoren/{customer}/lieferfreigabe', [DebtorController::class, 'updateDeliveryStatus'])->name('debtor.delivery');
         Route::post('/debitoren/{customer}/kontoauszug', [DebtorController::class, 'sendAccountStatement'])->name('debtor.account_statement');
+        Route::get('/debitoren/{customer}/kontoauszug/vorschau', [DebtorController::class, 'previewAccountStatement'])->name('debtor.account_statement.preview');
+        Route::get('/debitoren/{customer}/mahnung/vorschau', [DunningRunController::class, 'previewQuick'])->name('dunning.send_quick.preview');
         Route::post('/debitoren/vouchers/{voucher}/block', [DebtorController::class, 'toggleVoucherBlock'])->name('debtor.voucher.block');
         Route::get('/debitoren/vouchers/{voucher}/pdf', [DebtorController::class, 'downloadVoucherPdf'])->name('debtor.voucher.pdf');
 
@@ -359,9 +397,10 @@ Route::prefix('admin')
 
         // ── Stammdaten (WP-20) ────────────────────────────────────────────
         Route::resource('brands', AdminBrandController::class)
-            ->except(['show', 'create', 'edit'])
+            ->except(['show', 'create'])
             ->names([
                 'index'   => 'brands.index',
+                'edit'    => 'brands.edit',
                 'store'   => 'brands.store',
                 'update'  => 'brands.update',
                 'destroy' => 'brands.destroy',
@@ -421,6 +460,13 @@ Route::prefix('admin')
         Route::delete('pfand-sets/{pfandSet}/components/{component}',
             [AdminPfandSetController::class, 'destroyComponent'])
             ->name('pfand-sets.components.destroy');
+
+        Route::get('leergut-zuweisungen', [AdminLeergutZuweisungController::class, 'index'])
+            ->name('leergut-zuweisungen.index');
+        Route::post('leergut-zuweisungen/auto-assign', [AdminLeergutZuweisungController::class, 'autoAssign'])
+            ->name('leergut-zuweisungen.auto-assign');
+        Route::post('leergut-zuweisungen/{product}', [AdminLeergutZuweisungController::class, 'update'])
+            ->name('leergut-zuweisungen.update');
 
         Route::resource('customer-groups', AdminCustomerGroupController::class)
             ->except(['show', 'create', 'edit'])
@@ -539,12 +585,22 @@ Route::prefix('admin')
             ->name('catalog.overview');
         Route::post('/catalog/quick-create', [CatalogOverviewController::class, 'quickCreate'])
             ->name('catalog.quick-create');
+        Route::get('/catalog/recent-changes', [\App\Http\Controllers\Admin\AdminRecentChangesController::class, 'index'])
+            ->name('catalog.recent-changes');
 
         // ── Bulk Alkohol Editor ────────────────────────────────────────────
         Route::get('/products/bulk-alkohol', [AdminBulkAlkoholController::class, 'index'])
             ->name('products.bulk-alkohol');
         Route::post('/products/bulk-alkohol', [AdminBulkAlkoholController::class, 'update'])
             ->name('products.bulk-alkohol.update');
+
+        // ── Bulk Gebinde / Pfand Editor ───────────────────────────────────
+        Route::get('/products/bulk-gebinde', [AdminBulkGebindeController::class, 'index'])
+            ->name('products.bulk-gebinde');
+        Route::post('/products/bulk-gebinde', [AdminBulkGebindeController::class, 'update'])
+            ->name('products.bulk-gebinde.update');
+        Route::post('/products/bulk-gebinde/auto-assign', [AdminBulkGebindeController::class, 'autoAssign'])
+            ->name('products.bulk-gebinde.auto-assign');
 
         // ── Products (WP-15 + WP-19) ──────────────────────────────────────
         // Note: Admin routes use {product:id} to bind by ID, since the
@@ -606,6 +662,10 @@ Route::prefix('admin')
             ->name('warehouses.update');
         Route::delete('/warehouses/{warehouse}', [AdminWarehouseController::class, 'destroy'])
             ->name('warehouses.destroy');
+        Route::post('/warehouses/{warehouse}/opening-hours', [AdminWarehouseController::class, 'storeOpeningHour'])
+            ->name('warehouses.opening-hours.store');
+        Route::delete('/warehouses/{warehouse}/opening-hours/{openingHour}', [AdminWarehouseController::class, 'destroyOpeningHour'])
+            ->name('warehouses.opening-hours.destroy');
         Route::get('/stock', [AdminStockController::class, 'index'])
             ->name('stock.index');
         Route::get('/stock-movements', [AdminStockMovementController::class, 'index'])
@@ -627,6 +687,12 @@ Route::prefix('admin')
                 ->name('import-wawi');
             Route::post('/', [\App\Http\Controllers\Admin\AdminEinkaufController::class, 'store'])
                 ->name('store');
+            // ── Anlieferungen (GoodsReceipts) — must come before /{purchaseOrder} ──
+            Route::get('/anlieferungen', [\App\Http\Controllers\Admin\AdminEinkaufController::class, 'anlieferungen'])
+                ->name('anlieferungen.index');
+            Route::get('/anlieferungen/{goodsReceipt}', [\App\Http\Controllers\Admin\AdminEinkaufController::class, 'anlieferungShow'])
+                ->name('anlieferungen.show');
+
             Route::get('/{purchaseOrder}', [\App\Http\Controllers\Admin\AdminEinkaufController::class, 'show'])
                 ->name('show');
             Route::get('/{purchaseOrder}/edit', [\App\Http\Controllers\Admin\AdminEinkaufController::class, 'edit'])
@@ -657,6 +723,10 @@ Route::prefix('admin')
         Route::get('/reports/export/{type}', [AdminReportController::class, 'exportCsv'])
             ->name('reports.export')
             ->where('type', 'revenue|margin|deposit|tours');
+
+        // ── Kassenbericht / UST-Voranmeldung (PROJ-39) ───────────────────
+        Route::get('/kassenbericht',     [\App\Http\Controllers\Admin\KassenberichtController::class, 'index'])->name('kassenbericht');
+        Route::get('/kassenbericht/pdf', [\App\Http\Controllers\Admin\KassenberichtController::class, 'pdf'])  ->name('kassenbericht.pdf');
 
         // ── Statistik (POS-Verkauf + Einkaufsplanung) ─────────────────────
         Route::prefix('statistics')->name('statistics.')->group(function () {
@@ -924,6 +994,37 @@ Route::prefix('mitarbeiter')
         Route::get('/kasse',              [\App\Http\Controllers\Employee\EmployeeCashController::class, 'index'])->name('cash.index');
         Route::post('/kasse/buchen',      [\App\Http\Controllers\Employee\EmployeeCashController::class, 'store'])->name('cash.store');
         Route::post('/kasse/kassensturz', [\App\Http\Controllers\Employee\EmployeeCashController::class, 'kassensturz'])->name('cash.kassensturz');
+
+        // ── Wissensassistent ──────────────────────────────────────────────────
+        Route::get('/wissensassistent',
+            [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'index'])
+            ->name('knowledge.chat');
+        Route::post('/wissensassistent/fragen',
+            [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'ask'])
+            ->name('knowledge.ask');
+        Route::post('/wissensassistent/feedback/{query}',
+            [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'feedback'])
+            ->name('knowledge.feedback');
+        Route::post('/wissensassistent/luecke',
+            [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'reportGap'])
+            ->name('knowledge.gap');
+        Route::post('/wissensassistent/entwurf',
+            [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'createDraft'])
+            ->name('knowledge.draft');
+    });
+
+// ── Wissensassistent Admin ────────────────────────────────────────────────
+Route::prefix('admin/knowledge')
+    ->name('admin.knowledge.')
+    ->middleware(['auth', 'admin'])
+    ->group(function (): void {
+        Route::get('/',                        [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'index'])->name('index');
+        Route::get('/luecken',                 [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'gaps'])->name('gaps');
+        Route::post('/sync',                   [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'sync'])->name('sync');
+        Route::post('/reindex',                [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'reindex'])->name('reindex');
+        Route::delete('/dokument/{document}',  [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'removeSource'])->name('remove');
+        Route::get('/verbindung-testen',       [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'testConnections'])->name('test');
+        Route::patch('/luecken/{gap}',         [\App\Http\Controllers\Knowledge\KnowledgeAdminController::class, 'resolveGap'])->name('gaps.resolve');
     });
 
 // ── Mitarbeiterverwaltung ─────────────────────────────────────────────────
@@ -953,6 +1054,11 @@ Route::prefix('admin/shifts/reports')->name('admin.shifts.reports.')->middleware
     Route::get('/{report}/edit',     [App\Http\Controllers\Admin\ShiftReportController::class, 'edit'])->name('edit');
     Route::patch('/{report}',        [App\Http\Controllers\Admin\ShiftReportController::class, 'update'])->name('update');
     Route::post('/{report}/submit',  [App\Http\Controllers\Admin\ShiftReportController::class, 'submit'])->name('submit');
+});
+
+Route::prefix('admin/fehlende-produkte')->name('admin.missing-products.')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/',             [\App\Http\Controllers\Admin\AdminMissingProductController::class, 'index'])->name('index');
+    Route::patch('/{report}',   [\App\Http\Controllers\Admin\AdminMissingProductController::class, 'update'])->name('update');
 });
 
 Route::prefix('admin/vacation')->name('admin.vacation.')->middleware(['auth', 'admin'])->group(function () {
@@ -988,6 +1094,7 @@ Route::prefix('mein')->name('mein.')->middleware(['employee-session'])->group(fu
     Route::get('/schicht',                               [\App\Http\Controllers\Employee\MeinController::class, 'schicht'])->name('schicht');
     Route::post('/schicht',                              [\App\Http\Controllers\Employee\MeinController::class, 'schichtSave'])->name('schicht.save');
     Route::get('/aufgaben',                              [\App\Http\Controllers\Employee\MeinController::class, 'aufgaben'])->name('aufgaben');
+    Route::get('/aufgaben/zusammenfassung',              [\App\Http\Controllers\Employee\MeinController::class, 'aufgabenZusammenfassung'])->name('aufgaben.zusammenfassung');
     Route::post('/aufgaben',                             [\App\Http\Controllers\Employee\MeinController::class, 'aufgabeStore'])->name('aufgabe.store');
     Route::post('/aufgaben/complete',                    [\App\Http\Controllers\Employee\MeinController::class, 'taskComplete'])->name('task.complete');
     Route::get('/aufgaben/{task}',                       [\App\Http\Controllers\Employee\MeinController::class, 'aufgabeDetail'])->name('aufgabe.show');
@@ -1000,6 +1107,16 @@ Route::prefix('mein')->name('mein.')->middleware(['employee-session'])->group(fu
     Route::post('/logout',                               [\App\Http\Controllers\Employee\MeinController::class, 'logout'])->name('logout');
     Route::post('/notifications/{notification}/read',    [\App\Http\Controllers\Employee\MeinController::class, 'markNotificationRead'])->name('notification.read');
     Route::post('/feedback',                             [\App\Http\Controllers\Employee\MeinController::class, 'feedbackStore'])->name('feedback.store');
+    Route::get('/mein-feedback',                         [\App\Http\Controllers\Employee\MeinController::class, 'feedbackIndex'])->name('feedback.index');
+
+    Route::get('/schichtberichte',                       [\App\Http\Controllers\Employee\MeinController::class, 'schichtberichteIndex'])->name('schichtberichte');
+    Route::get('/schicht/nachtrag',                      [\App\Http\Controllers\Employee\MeinController::class, 'schichtNachtrag'])->name('schicht.nachtrag');
+    Route::post('/schicht/nachtrag',                     [\App\Http\Controllers\Employee\MeinController::class, 'schichtNachtragSave'])->name('schicht.nachtrag.save');
+
+    Route::get('/fehlende-produkte',                     [\App\Http\Controllers\Employee\MeinController::class, 'fehlendeProdukteIndex'])->name('fehlende-produkte');
+    Route::post('/fehlende-produkte',                    [\App\Http\Controllers\Employee\MeinController::class, 'fehlendeProdukteStore'])->name('fehlende-produkte.store');
+    Route::get('/produkt-suche',                         [\App\Http\Controllers\Employee\MeinController::class, 'produktSuche'])->name('produkt-suche');
+
     Route::get('/urlaub',                                [\App\Http\Controllers\Employee\MeinVacationController::class, 'index'])->name('urlaub');
     Route::post('/urlaub',                               [\App\Http\Controllers\Employee\MeinVacationController::class, 'store'])->name('urlaub.store');
     Route::post('/urlaub/{request}/cancel',              [\App\Http\Controllers\Employee\MeinVacationController::class, 'cancel'])->name('urlaub.cancel');
@@ -1007,6 +1124,39 @@ Route::prefix('mein')->name('mein.')->middleware(['employee-session'])->group(fu
     Route::get('/kasse',              [\App\Http\Controllers\Employee\MeinCashController::class, 'index'])->name('kasse');
     Route::post('/kasse/buchen',      [\App\Http\Controllers\Employee\MeinCashController::class, 'store'])->name('kasse.store');
     Route::post('/kasse/kassensturz', [\App\Http\Controllers\Employee\MeinCashController::class, 'kassensturz'])->name('kasse.kassensturz');
+
+    // ── Wissensassistent (PIN-Session) ────────────────────────────────────────
+    Route::get('/wissensassistent',
+        [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'index'])
+        ->name('knowledge.chat');
+    Route::post('/wissensassistent/fragen',
+        [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'ask'])
+        ->name('knowledge.ask');
+    Route::post('/wissensassistent/feedback/{query}',
+        [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'feedback'])
+        ->name('knowledge.feedback');
+    Route::post('/wissensassistent/luecke',
+        [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'reportGap'])
+        ->name('knowledge.gap');
+    Route::post('/wissensassistent/entwurf',
+        [\App\Http\Controllers\Knowledge\KnowledgeChatController::class, 'createDraft'])
+        ->name('knowledge.draft');
+
+    Route::prefix('docscan')->name('docscan.')->controller(\App\Http\Controllers\Employee\MeinDocScanController::class)->group(function () {
+        Route::get('/',                            'index')->name('index');
+        Route::post('/store',                      'storeFiles')->name('store');
+        Route::get('/search/anlieferungen',        'searchAnlieferungen')->name('search.anlieferungen');
+        Route::get('/search/bestellungen',         'searchBestellungen')->name('search.bestellungen');
+        Route::post('/anlieferung/quick-create',   'quickCreateAnlieferung')->name('anlieferung.quick-create');
+        Route::get('/{upload}/file',               'file')->name('file');
+        Route::post('/{upload}/analyze',           'analyze')->name('analyze');
+        Route::post('/{upload}/assign',            'assign')->name('assign');
+        Route::post('/{upload}/intern-zuordnen',   'assignIntern')->name('intern-zuordnen');
+        Route::post('/{upload}/rename',            'rename')->name('rename');
+        Route::post('/{upload}/replace-file',      'replaceFile')->name('replace-file');
+        Route::delete('/{upload}',                 'destroy')->name('destroy');
+        Route::post('/{upload}/restore',           'restore')->name('restore');
+    });
 });
 
 Route::prefix('vacation')->name('vacation.')->middleware(['auth'])->group(function () {
@@ -1280,4 +1430,77 @@ Route::prefix('admin/primeur-archiv')->name('admin.primeur.')->middleware(['auth
     Route::get('/statistik/umsatz',    [\App\Http\Controllers\Admin\Primeur\PrimeurStatsController::class, 'revenue'])->name('stats.revenue');
     Route::get('/statistik/artikel',   [\App\Http\Controllers\Admin\Primeur\PrimeurStatsController::class, 'articles'])->name('stats.articles');
     Route::get('/statistik/kunden/export', [\App\Http\Controllers\Admin\Primeur\PrimeurStatsController::class, 'exportCustomers'])->name('stats.customers.export');
+});
+
+// ── Admin: Fahrertouren ────────────────────────────────────────────────────────
+Route::prefix('admin/touren')->name('admin.touren.')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/',                   [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'index'])  ->name('index');
+    Route::get('/create',             [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'create']) ->name('create');
+    Route::post('/',                  [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'store'])  ->name('store');
+    Route::get('/{tour}',             [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'show'])   ->name('show');
+    Route::patch('/{tour}/driver',    [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'updateDriver'])->name('update-driver');
+    Route::delete('/{tour}',          [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'destroy'])      ->name('destroy');
+    Route::post('/ninox-pull',        [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'pullFromNinox']) ->name('ninox-pull');
+    Route::post('/{tour}/ninox-sync', [\App\Http\Controllers\Admin\AdminFahrertourController::class, 'syncFromNinox'])->name('ninox-sync');
+});
+
+// ── Admin: Fahrer-Uploads (Lieferscheine & Fotos) ─────────────────────────────
+Route::prefix('admin/driver-uploads')->name('admin.driver-uploads.')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/',          [\App\Http\Controllers\Admin\AdminDriverUploadController::class, 'index'])->name('index');
+    Route::patch('/{upload}/status', [\App\Http\Controllers\Admin\AdminDriverUploadController::class, 'updateStatus'])->name('status');
+    Route::get('/{upload}/thumb',    [\App\Http\Controllers\Admin\AdminDriverUploadController::class, 'thumbnail'])->name('thumb');
+    Route::get('/{upload}/mark/{status}',  [\App\Http\Controllers\Admin\AdminDriverUploadController::class, 'mark'])->name('mark');
+    Route::post('/{upload}/sync-description', [\App\Http\Controllers\Admin\AdminDriverUploadController::class, 'syncDescription'])->name('sync-description');
+});
+
+// ── PROJ-38: Veranstaltungen & Angebote ──────────────────────────────────────
+Route::prefix('admin/veranstaltungen')->name('admin.events.')->middleware(['auth', 'admin'])->group(function () {
+    Route::get('/', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'index'])->name('index');
+    Route::get('/offene-angebote', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'openOffers'])->name('open-offers');
+    Route::get('/angebote-todo', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'todoOffers'])->name('todo-offers');
+    Route::get('/abrechnung-offen', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'billingOpen'])->name('billing-open');
+    Route::get('/kalender', [\App\Http\Controllers\Admin\Events\EventCalendarController::class, 'index'])->name('calendar');
+    Route::get('/kalender/data', [\App\Http\Controllers\Admin\Events\EventCalendarController::class, 'data'])->name('calendar.data');
+    Route::get('/anfragen', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'requests'])->name('requests');
+    Route::get('/nachkalkulation', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'postCalcOpen'])->name('post-calc-open');
+
+    // Import
+    Route::prefix('import')->name('import.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'index'])->name('index');
+        Route::post('/ninox', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'importNinox'])->name('ninox');
+        Route::get('/ninox/preview/{ninoxId}', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'previewNinox'])->name('ninox.preview');
+        Route::get('/jtl', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'jtlCandidates'])->name('jtl');
+        Route::post('/jtl', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'importJtl'])->name('jtl.store');
+        Route::post('/jtl/bulk', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'importJtlBulk'])->name('jtl.bulk');
+        Route::post('/jtl/auto', [\App\Http\Controllers\Admin\Events\EventImportController::class, 'importJtlAuto'])->name('jtl.auto');
+    });
+
+    // Serien
+    Route::prefix('serien')->name('series.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'index'])->name('index');
+        Route::get('/neu', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'store'])->name('store');
+        Route::get('/{series}', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'show'])->name('show');
+        Route::get('/{series}/bearbeiten', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'edit'])->name('edit');
+        Route::put('/{series}', [\App\Http\Controllers\Admin\Events\EventSeriesController::class, 'update'])->name('update');
+    });
+
+    // Occurrences (Hauptbereich)
+    Route::get('/neu', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'create'])->name('create');
+    Route::post('/', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'store'])->name('store');
+    Route::get('/{occurrence}', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'show'])->name('show');
+    Route::get('/{occurrence}/bearbeiten', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'edit'])->name('edit');
+    Route::get('/{occurrence}/edit', fn (\App\Models\Events\EventOccurrence $occurrence) => redirect()->route('admin.events.edit', $occurrence));
+    Route::put('/{occurrence}', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'update'])->name('update');
+    Route::delete('/{occurrence}', [\App\Http\Controllers\Admin\Events\EventOccurrenceController::class, 'destroy'])->name('destroy');
+
+    // Angebote
+    Route::prefix('{occurrence}/angebote')->name('offers.')->group(function () {
+        Route::get('/neu', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'create'])->name('create');
+        Route::post('/', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'store'])->name('store');
+        Route::get('/{version}', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'show'])->name('show');
+        Route::post('/{version}/annehmen', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'accept'])->name('accept');
+        Route::post('/{version}/pdf', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'uploadPdf'])->name('pdf.upload');
+        Route::post('/{version}/neue-version', [\App\Http\Controllers\Admin\Events\EventOfferController::class, 'createVersion'])->name('version');
+    });
 });

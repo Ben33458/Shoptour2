@@ -50,7 +50,7 @@ class StatsPosRefreshCommand extends Command
         // flagged here so all statistics queries can exclude them.
         DB::statement("
             INSERT INTO stats_pos_daily
-                (bon_date, artnr, name, warengruppe, is_pfand, is_leergut, is_mhd_writeoff, menge, umsatz, unit_price, created_at, updated_at)
+                (bon_date, artnr, name, warengruppe, is_pfand, is_leergut, is_mhd_writeoff, menge, umsatz, unit_price, mwst_satz, created_at, updated_at)
             SELECT
                 DATE(STR_TO_DATE(SUBSTRING(b.dDatum,1,19),'%Y-%m-%d %H:%i:%s'))  AS bon_date,
                 COALESCE(NULLIF(bp.tArtikel_cArtNr,''), bp.tArtikel_cName)        AS artnr,
@@ -62,6 +62,7 @@ class StatsPosRefreshCommand extends Command
                 SUM(bp.fMenge)                                                     AS menge,
                 SUM(bp.fMenge * bp.fEinzelPreis)                                   AS umsatz,
                 MAX(bp.fEinzelPreis)                                                AS unit_price,
+                MAX(CAST(COALESCE(NULLIF(bp.tArtikel_fMwSt,''), '19') AS DECIMAL(5,2))) AS mwst_satz,
                 NOW(), NOW()
             FROM wawi_dbo_pos_bonposition bp
             JOIN wawi_dbo_pos_bon b ON b.kBon = bp.kBon
@@ -78,6 +79,7 @@ class StatsPosRefreshCommand extends Command
                 menge           = VALUES(menge),
                 umsatz          = VALUES(umsatz),
                 unit_price      = VALUES(unit_price),
+                mwst_satz       = VALUES(mwst_satz),
                 updated_at      = NOW()
         ", [$fromDate]);
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee\PublicHoliday;
 use App\Models\Warehouse;
+use App\Models\WarehouseOpeningHour;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -63,7 +65,44 @@ class AdminWarehouseController extends Controller
             ->orderByDesc('quantity')
             ->paginate(50);
 
-        return view('admin.warehouses.show', compact('warehouse', 'stocks'));
+        $openingHours = $warehouse->openingHours()->orderBy('day_of_week')->get();
+
+        $upcomingHolidays = PublicHoliday::where('date', '>=', today())
+            ->where('date', '<=', today()->addMonths(3))
+            ->orderBy('date')
+            ->get(['date', 'name']);
+
+        return view('admin.warehouses.show', compact('warehouse', 'stocks', 'openingHours', 'upcomingHolidays'));
+    }
+
+    public function storeOpeningHour(Request $request, Warehouse $warehouse): RedirectResponse
+    {
+        $validated = $request->validate([
+            'day_of_week' => ['required', 'integer', 'min:0', 'max:6'],
+            'open_from'   => ['required', 'string', 'regex:/^\d{2}:\d{2}$/'],
+            'open_to'     => ['required', 'string', 'regex:/^\d{2}:\d{2}$/', function ($attr, $value, $fail) use ($request) {
+                if ($value <= $request->input('open_from')) {
+                    $fail('Bis-Zeit muss nach der Von-Zeit liegen.');
+                }
+            }],
+        ]);
+
+        $warehouse->openingHours()->updateOrCreate(
+            ['day_of_week' => $validated['day_of_week']],
+            ['open_from' => $validated['open_from'], 'open_to' => $validated['open_to']],
+        );
+
+        return redirect()->route('admin.warehouses.show', $warehouse)
+            ->with('success', 'Öffnungszeiten gespeichert.');
+    }
+
+    public function destroyOpeningHour(Warehouse $warehouse, WarehouseOpeningHour $openingHour): RedirectResponse
+    {
+        abort_unless($openingHour->warehouse_id === $warehouse->id, 404);
+        $openingHour->delete();
+
+        return redirect()->route('admin.warehouses.show', $warehouse)
+            ->with('success', 'Öffnungszeiten gelöscht.');
     }
 
     public function edit(Warehouse $warehouse): View

@@ -38,12 +38,12 @@
         </div>
     </a>
 
-    <div style="text-decoration:none;">
+    <a href="#feedback" style="text-decoration:none;">
         <div class="stat-card" style="background:var(--c-surface,#fff);border:1px solid var(--c-border,#e2e8f0);border-radius:8px;padding:1.5rem;">
             <div style="font-size:2rem;font-weight:700;color:{{ $stats['open_feedback'] > 0 ? 'var(--c-warning,#d97706)' : 'var(--c-muted,#64748b)' }};">{{ $stats['open_feedback'] }}</div>
             <div style="color:var(--c-muted,#64748b);font-size:.9rem;margin-top:.25rem;">Offenes Feedback</div>
         </div>
-    </div>
+    </a>
 
 </div>
 
@@ -96,7 +96,7 @@
 
 {{-- ── Mitarbeiter-Feedback ─────────────────────────────────────────────── --}}
 @if($feedbackItems->isNotEmpty())
-<div class="card" style="margin-bottom:2rem;">
+<div id="feedback" class="card" style="margin-bottom:2rem;">
     <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
         <strong>Mitarbeiter-Feedback ({{ $feedbackItems->count() }} offen / in Bearbeitung)</strong>
     </div>

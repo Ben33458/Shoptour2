@@ -6,11 +6,16 @@ use App\Http\Controllers\Api\PosProductController;
 use App\Http\Controllers\Api\PosSaleController;
 use App\Http\Controllers\Api\ShopProductController;
 use App\Http\Controllers\Api\SyncController;
+use App\Http\Controllers\Driver\DriverAddStopController;
 use App\Http\Controllers\Driver\DriverBootstrapController;
+use App\Http\Controllers\Driver\DriverCustomerSearchController;
 use App\Http\Controllers\Driver\DriverSyncController;
 use App\Http\Controllers\Driver\DriverUploadController;
+use App\Http\Controllers\Driver\DriverUploadFileController;
 use App\Http\Controllers\Payments\WebhookController;
 use App\Http\Middleware\DriverAuth;
+use Illuminate\Cookie\Middleware\EncryptCookies;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -28,13 +33,19 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('driver')
-    ->middleware([DriverAuth::class])
+    ->middleware([EncryptCookies::class, StartSession::class, DriverAuth::class])
     ->group(function (): void {
         Route::get('bootstrap', DriverBootstrapController::class)
             ->middleware('throttle:driver-bootstrap');
         Route::post('sync', DriverSyncController::class)
             ->middleware('throttle:driver-api');
         Route::post('upload', DriverUploadController::class)
+            ->middleware('throttle:driver-api');
+        Route::get('uploads/{upload}', DriverUploadFileController::class)
+            ->middleware('throttle:driver-api');
+        Route::get('customers', DriverCustomerSearchController::class)
+            ->middleware('throttle:driver-api');
+        Route::post('add-stop', DriverAddStopController::class)
             ->middleware('throttle:driver-api');
     });
 

@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * WP-20: CRUD controller for Brands. Supports inline-edit PATCH.
+ * WP-20: CRUD controller for Brands. Supports inline-edit PATCH and full edit form.
  */
 class AdminBrandController extends Controller
 {
@@ -22,25 +22,42 @@ class AdminBrandController extends Controller
         return view('admin.brands.index', compact('brands'));
     }
 
+    public function edit(Brand $brand): View
+    {
+        return view('admin.brands.edit', compact('brand'));
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:150', 'unique:brands,name'],
+            'name'    => ['required', 'string', 'max:150', 'unique:brands,name'],
+            'adresse' => ['nullable', 'string', 'max:255'],
+            'plz'     => ['nullable', 'string', 'max:10'],
+            'ort'     => ['nullable', 'string', 'max:100'],
+            'land'    => ['nullable', 'string', 'max:100'],
+            'email'   => ['nullable', 'email', 'max:255'],
+            'website' => ['nullable', 'url', 'max:255'],
         ]);
-        Brand::create(['name' => $request->input('name')]);
+        Brand::create($request->only(['name', 'adresse', 'plz', 'ort', 'land', 'email', 'website']));
         return back()->with('success', 'Marke angelegt.');
     }
 
     public function update(Request $request, Brand $brand): JsonResponse|RedirectResponse
     {
         $request->validate([
-            'name' => ['required', 'string', 'max:150', 'unique:brands,name,' . $brand->id],
+            'name'    => ['required', 'string', 'max:150', 'unique:brands,name,' . $brand->id],
+            'adresse' => ['nullable', 'string', 'max:255'],
+            'plz'     => ['nullable', 'string', 'max:10'],
+            'ort'     => ['nullable', 'string', 'max:100'],
+            'land'    => ['nullable', 'string', 'max:100'],
+            'email'   => ['nullable', 'email', 'max:255'],
+            'website' => ['nullable', 'url', 'max:255'],
         ]);
-        $brand->update(['name' => $request->input('name')]);
+        $brand->update($request->only(['name', 'adresse', 'plz', 'ort', 'land', 'email', 'website']));
         if ($request->wantsJson()) {
             return response()->json(['ok' => true]);
         }
-        return back()->with('success', 'Marke gespeichert.');
+        return redirect()->route('admin.brands.index')->with('success', 'Hersteller gespeichert.');
     }
 
     public function destroy(Brand $brand): RedirectResponse

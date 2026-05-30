@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Shop;
 
+use App\Services\Catalog\JugendschutzService;
+use App\Services\Payments\IbanValidator;
+use App\Services\Shop\CartService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -26,7 +29,14 @@ class StoreCheckoutRequest extends FormRequest
      */
     public function rules(): array
     {
+        $cartItems = app(CartService::class)->items(auth()->user());
+        $minAge    = JugendschutzService::cartMinAge($cartItems);
+
         return [
+            // Legal consent
+            'agb_accepted'  => ['required', 'accepted'],
+            'age_confirmed' => $minAge > 0 ? ['required', 'accepted'] : ['nullable'],
+
             // Step 1: Delivery type
             'delivery_type' => ['required', Rule::in(['home_delivery', 'pickup'])],
 
@@ -63,14 +73,38 @@ class StoreCheckoutRequest extends FormRequest
             // Step 2b: Pickup warehouse (pickup)
             'pickup_warehouse_id' => ['required_if:delivery_type,pickup', 'nullable', 'integer', 'exists:warehouses,id'],
 
-            // Step 3: Delivery date (not required for rental-only orders)
-            'delivery_date' => ['required_without:has_rental_items', 'nullable', 'date', 'after:today'],
+            // Step 3: Delivery date (home_delivery, not required for rental-only orders)
+            'delivery_date' => ['required_if:delivery_type,home_delivery', 'required_without_all:has_rental_items,pickup_date', 'nullable', 'date', 'after:today'],
 
-            // Step 3: Tour assignment
+            // Step 3: Tour assignment (home_delivery only)
             'tour_id' => ['nullable', 'integer', 'exists:regular_delivery_tours,id'],
+
+            // Step 3: Pickup date + time slot (pickup only)
+            'pickup_date'      => ['required_if:delivery_type,pickup', 'nullable', 'date', 'after:today'],
+            'pickup_time_from' => ['required_if:delivery_type,pickup', 'nullable', 'string', 'regex:/^\d{2}:\d{2}$/'],
+            'pickup_time_to'   => ['required_if:delivery_type,pickup', 'nullable', 'string', 'regex:/^\d{2}:\d{2}$/'],
 
             // Step 4: Payment method
             'payment_method' => ['required', Rule::in(['stripe', 'paypal', 'sepa', 'invoice', 'cash', 'ec'])],
+
+            // SEPA mandate fields (required when sepa selected and no existing mandate used)
+            'sepa_use_existing'   => ['nullable', 'boolean'],
+            'sepa_iban'           => [
+                Rule::requiredIf(fn () => $this->isSepaNewMandate()),
+                'nullable', 'string', 'max:34',
+                function (string $attr, mixed $value, \Closure $fail): void {
+                    if ($value === null) {
+                        return;
+                    }
+                    if (! app(IbanValidator::class)->isValid($value)) {
+                        $fail('Die eingegebene IBAN ist ungültig. Bitte prüfe die Eingabe.');
+                    }
+                },
+            ],
+            'sepa_account_holder' => [
+                Rule::requiredIf(fn () => $this->isSepaNewMandate()),
+                'nullable', 'string', 'max:100',
+            ],
 
             // Step 5: Customer notes
             'customer_notes' => ['nullable', 'string', 'max:1000'],
@@ -92,20 +126,34 @@ class StoreCheckoutRequest extends FormRequest
         ];
     }
 
+    /** True when SEPA is selected and customer is entering a new mandate (not reusing existing). */
+    private function isSepaNewMandate(): bool
+    {
+        return $this->input('payment_method') === 'sepa'
+            && ! filter_var($this->input('sepa_use_existing'), FILTER_VALIDATE_BOOLEAN);
+    }
+
     /**
      * @return array<string, string>
      */
     public function messages(): array
     {
         return [
+            'agb_accepted.required'         => 'Bitte akzeptiere die AGB und Widerrufsbelehrung.',
+            'agb_accepted.accepted'         => 'Bitte akzeptiere die AGB und Widerrufsbelehrung.',
+            'age_confirmed.required'        => 'Bitte bestätige dein Mindestalter für den Kauf alkoholischer Getränke.',
+            'age_confirmed.accepted'        => 'Bitte bestätige dein Mindestalter für den Kauf alkoholischer Getränke.',
             'delivery_type.required'        => 'Bitte waehle eine Lieferart.',
             'delivery_type.in'              => 'Ungueltige Lieferart.',
             'delivery_address_id.required_if' => 'Bitte waehle eine Lieferadresse.',
             'pickup_warehouse_id.required_if' => 'Bitte waehle einen Abholort.',
             'pickup_warehouse_id.exists'     => 'Der gewaehlte Abholort existiert nicht.',
-            'delivery_date.required'         => 'Bitte waehle einen Liefertermin.',
+            'delivery_date.required_if'      => 'Bitte waehle einen Liefertermin.',
             'delivery_date.date'             => 'Ungueltiges Datum.',
             'delivery_date.after'            => 'Der Liefertermin muss in der Zukunft liegen.',
+            'pickup_date.required_if'        => 'Bitte waehle ein Abholdatum.',
+            'pickup_date.after'              => 'Das Abholdatum muss in der Zukunft liegen.',
+            'pickup_time_from.required_if'   => 'Bitte waehle ein Zeitfenster.',
             'payment_method.required'        => 'Bitte waehle eine Zahlungsmethode.',
             'payment_method.in'              => 'Ungueltige Zahlungsmethode.',
             'customer_notes.max'             => 'Die Kundennotiz darf maximal 1000 Zeichen lang sein.',
@@ -119,8 +167,9 @@ class StoreCheckoutRequest extends FormRequest
             'event_location_city.required_if'     => 'Bitte gib den Ort des Veranstaltungsortes an.',
             'event_contact_name.required_if'      => 'Bitte gib einen Ansprechpartner vor Ort an.',
             'event_contact_phone.required_if'     => 'Bitte gib eine Telefonnummer für den Ansprechpartner an.',
-            'event_delivery_mode.required_if'     => 'Bitte wähle die Lieferart für die Leihartikel.',
-            'event_pickup_mode.required_if'       => 'Bitte wähle die Rückgabeart für die Leihartikel.',
+            'event_delivery_mode.required_if'          => 'Bitte wähle die Lieferart für die Leihartikel.',
+            'event_pickup_mode.required_if'            => 'Bitte wähle die Rückgabeart für die Leihartikel.',
+            'drop_off_location_custom.required_if'     => 'Bitte beschreibe den Abstellort (Sonstiges).',
         ];
     }
 }

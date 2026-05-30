@@ -48,6 +48,7 @@ class Gebinde extends Model
         'name',
         'gebinde_type',
         'pfand_set_id',
+        'leergut_art_nr',
         'material',
         'active',
     ];

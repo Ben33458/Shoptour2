@@ -22,6 +22,12 @@
         Verkauf
     </a>
 
+    {{-- ── 1x. Touren ── --}}
+    <a href="{{ route('admin.touren.index') }}"
+       class="{{ request()->routeIs('admin.touren.*') ? 'active' : '' }}">
+        Touren
+    </a>
+
     {{-- ── 1a. Finanzen / Mahnwesen ── --}}
     <a href="{{ route('admin.debtor.index') }}"
        class="{{ request()->routeIs('admin.debtor.*', 'admin.dunning.*', 'admin.settings.dunning.*') ? 'active' : '' }}">
@@ -72,11 +78,29 @@
         Verleih &amp; Events
     </a>
 
+    {{-- ── Veranstaltungen & Angebote (PROJ-38) ── --}}
+    <a href="{{ route('admin.events.index') }}"
+       class="{{ request()->routeIs('admin.events.*') ? 'active' : '' }}">
+        Veranstaltungen
+        @php
+            $reviewCount = \App\Models\Events\EventOccurrence::where('needs_review', true)->count();
+        @endphp
+        @if($reviewCount > 0)
+            <span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:auto;">{{ $reviewCount }}</span>
+        @endif
+    </a>
+
     {{-- ── 3. Katalog ── --}}
     <a href="{{ route('admin.products.index') }}"
-       class="{{ request()->routeIs('admin.products.*', 'admin.categories.*', 'admin.customer-groups.*') ? 'active' : '' }}">
+       class="{{ request()->routeIs('admin.products.*', 'admin.categories.*', 'admin.customer-groups.*', 'admin.catalog.*', 'admin.leergut-zuweisungen.*') ? 'active' : '' }}">
         Katalog
     </a>
+    <div style="padding-left:16px;margin-top:-4px;display:flex;flex-direction:column;gap:2px">
+        <a href="{{ route('admin.catalog.recent-changes') }}"
+           style="font-size:.82em;padding:2px 8px;border-radius:4px;{{ request()->routeIs('admin.catalog.recent-changes') ? 'font-weight:600;color:var(--c-primary)' : 'color:var(--c-muted)' }}">
+            Letzte Änderungen
+        </a>
+    </div>
 
     {{-- ── 4. Lager & Einkauf ── --}}
     <a href="{{ route('admin.stock.index') }}"
@@ -100,9 +124,23 @@
         @endif
     </a>
 
+    {{-- ── Wissensassistent (PROJ-40) ── --}}
+    @if(config('knowledge.enabled'))
+    <a href="{{ route('admin.knowledge.index') }}"
+       class="{{ request()->routeIs('admin.knowledge.*') ? 'active' : '' }}">
+        Wissensassistent
+        @php
+            $openGaps = \App\Models\Knowledge\KnowledgeGap::where('status', 'open')->count();
+        @endphp
+        @if($openGaps > 0)
+            <span style="background:#6366f1;color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:auto;">{{ $openGaps }}</span>
+        @endif
+    </a>
+    @endif
+
     {{-- ── 7. Personal ── --}}
     <a href="{{ route('admin.employees.index') }}"
-       class="{{ request()->routeIs('admin.employees.*', 'admin.shifts.*', 'admin.time.*', 'admin.vacation.*', 'admin.onboarding.*', 'admin.emp-tasks.*', 'admin.recurring-tasks.*', 'employee.*') ? 'active' : '' }}">
+       class="{{ request()->routeIs('admin.employees.*', 'admin.shifts.*', 'admin.time.*', 'admin.vacation.*', 'admin.onboarding.*', 'admin.emp-tasks.*', 'admin.recurring-tasks.*', 'employee.*', 'admin.missing-products.*') ? 'active' : '' }}">
         Personal
         @php $pendingOnboarding = \App\Models\Employee\Employee::where('onboarding_status','pending_review')->count(); @endphp
         @if($pendingOnboarding > 0)
@@ -125,7 +163,7 @@
 
     {{-- ── 9. Administration ── --}}
     <a href="{{ route('admin.users.index') }}"
-       class="{{ request()->routeIs('admin.users.*', 'admin.driver-tokens.*', 'admin.diagnostics', 'admin.deploy.*', 'admin.audit-logs.*', 'admin.tasks.*', 'admin.settings.shop_display.*') ? 'active' : '' }}">
+       class="{{ request()->routeIs('admin.users.*', 'admin.driver-tokens.*', 'admin.diagnostics', 'admin.deploy.*', 'admin.audit-logs.*', 'admin.tasks.*', 'admin.settings.shop_display.*', 'admin.settings.integrations*') ? 'active' : '' }}">
         Administration
     </a>
 

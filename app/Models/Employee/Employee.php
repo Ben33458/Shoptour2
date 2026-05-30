@@ -18,7 +18,7 @@ class Employee extends Model
         'birth_date', 'hire_date', 'leave_date', 'role', 'employment_type',
         'weekly_hours', 'work_on_saturdays', 'vacation_days_per_year', 'is_active', 'pin_hash', 'zustaendigkeit',
         // Ninox
-        'ninox_source_id', 'ninox_source_table', 'ninox_alt_source_id',
+        'ninox_source_id', 'ninox_source_table', 'ninox_alt_source_id', 'ninox_pushed_at',
         // Onboarding
         'onboarding_status', 'onboarding_completed_at', 'privacy_accepted_at',
         'iban', 'emergency_contact_name', 'emergency_contact_phone',
@@ -35,6 +35,7 @@ class Employee extends Model
         'drivers_license_expiry'   => 'date',
         'onboarding_completed_at'  => 'datetime',
         'privacy_accepted_at'      => 'datetime',
+        'ninox_pushed_at'          => 'datetime',
         'is_active'                => 'boolean',
         'work_on_saturdays'        => 'boolean',
         'zustaendigkeit'           => 'array',

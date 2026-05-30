@@ -9,9 +9,13 @@ use App\Mail\OrderConfirmation;
 use Illuminate\Support\Facades\Artisan;
 use App\Models\Admin\DeferredTask;
 use App\Models\Admin\Invoice;
+use App\Models\Catalog\Product;
+use App\Models\Employee\Employee;
 use App\Models\Orders\Order;
+use App\Models\Pricing\Customer;
 use App\Services\Admin\AuditLogService;
 use App\Services\Integrations\LexofficeSync;
+use App\Services\Ninox\NinoxPushService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 
@@ -110,6 +114,10 @@ class KolabriTasksRunCommand extends Command
             'email.order_confirmation' => $this->handleEmailOrderConfirmation($payload),
             'wawi.sync_prices'         => Artisan::call('wawi:sync-prices'),
             'wawi.sync_leergut'        => Artisan::call('wawi:sync-leergut'),
+            'ninox.push_customer'      => $this->handleNinoxPushCustomer($payload),
+            'ninox.push_employee'      => $this->handleNinoxPushEmployee($payload),
+            'ninox.push_order'         => $this->handleNinoxPushOrder($payload),
+            'ninox.push_product'       => $this->handleNinoxPushProduct($payload),
             default => throw new \UnexpectedValueException("Unknown task type: {$task->type}"),
         };
     }
@@ -141,6 +149,34 @@ class KolabriTasksRunCommand extends Command
             'recipient'      => $email,
             'source'         => 'deferred_task',
         ]);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleNinoxPushCustomer(array $payload): void
+    {
+        $customer = Customer::findOrFail((int) ($payload['customer_id'] ?? 0));
+        app(NinoxPushService::class)->pushCustomer($customer);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleNinoxPushEmployee(array $payload): void
+    {
+        $employee = Employee::findOrFail((int) ($payload['employee_id'] ?? 0));
+        app(NinoxPushService::class)->pushEmployee($employee);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleNinoxPushOrder(array $payload): void
+    {
+        $order = Order::findOrFail((int) ($payload['order_id'] ?? 0));
+        app(NinoxPushService::class)->pushOrder($order);
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleNinoxPushProduct(array $payload): void
+    {
+        $product = Product::findOrFail((int) ($payload['product_id'] ?? 0));
+        app(NinoxPushService::class)->pushProduct($product);
     }
 
     /** @param array<string, mixed> $payload */

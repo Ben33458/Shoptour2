@@ -8,6 +8,7 @@ use App\Models\Address;
 use App\Models\Admin\OrderAdjustment;
 use App\Models\Delivery\RegularDeliveryTour;
 use App\Models\Delivery\TourStop;
+use App\Models\DocScanUpload;
 use App\Models\Event\EventLocation;
 use App\Models\Inventory\Warehouse;
 use App\Models\Pricing\Customer;
@@ -152,6 +153,12 @@ class Order extends Model
         'prepayment_due_date',
         'prepayment_received',
         'distance_km',
+        'ninox_id',
+        'ninox_pushed_at',
+        'ninox_item_count',
+        'lieferschein_upload_id',
+        'pickup_time_from',
+        'pickup_time_to',
     ];
 
     /**
@@ -170,9 +177,12 @@ class Order extends Model
         'total_pfand_brutto_milli' => 'integer',
         'prepayment_required_milli' => 'integer',
         'delivery_date'            => 'date',
+        'ninox_pushed_at'          => 'datetime',
         'desired_delivery_date'    => 'date',
         'desired_pickup_date'      => 'date',
         'prepayment_due_date'      => 'date',
+        'pickup_time_from'         => 'string',
+        'pickup_time_to'           => 'string',
     ];
 
     // -------------------------------------------------------------------------
@@ -283,5 +293,10 @@ class Order extends Model
     public function returnSlip(): HasOne
     {
         return $this->hasOne(RentalReturnSlip::class);
+    }
+
+    public function lieferscheinUpload(): BelongsTo
+    {
+        return $this->belongsTo(DocScanUpload::class, 'lieferschein_upload_id');
     }
 }

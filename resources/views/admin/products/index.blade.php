@@ -11,6 +11,9 @@
             <hr class="actions-menu-divider">
             <a href="{{ route('admin.lmiv.index') }}">LMIV verwalten</a>
             <a href="{{ route('admin.imports.lmiv') }}">LMIV importieren</a>
+            <hr class="actions-menu-divider">
+            <a href="{{ route('admin.products.bulk-gebinde') }}">Gebinde / Pfand zuweisen</a>
+            <a href="{{ route('admin.products.bulk-alkohol') }}">Alkoholgehalt bulk-pflegen</a>
         </div>
     </details>
 @endsection

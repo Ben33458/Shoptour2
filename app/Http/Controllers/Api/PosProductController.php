@@ -100,12 +100,33 @@ class PosProductController extends Controller
 
     private function searchByText(string $q): JsonResponse
     {
-        $term = '%' . $q . '%';
+        $like        = '%' . $q . '%';
+        $words       = array_values(array_filter(
+            preg_split('/[\s\-_.,\/]+/u', $q),
+            fn ($w) => mb_strlen($w) >= 1
+        ));
+        $likeCompact = '%' . preg_replace('/[\s\-_.,\/]+/u', '', mb_strtolower($q)) . '%';
 
         $products = Product::where('active', true)
-            ->where(function ($builder) use ($term): void {
-                $builder->where('produktname', 'like', $term)
-                    ->orWhere('artikelnummer', 'like', $term);
+            ->where(function ($builder) use ($words, $like, $likeCompact): void {
+                if (count($words) > 1) {
+                    $builder->where(function ($wq) use ($words): void {
+                        foreach ($words as $word) {
+                            $wl = '%' . $word . '%';
+                            $wq->where(function ($inner) use ($wl): void {
+                                $inner->where('produktname', 'LIKE', $wl)
+                                      ->orWhere('artikelnummer', 'LIKE', $wl);
+                            });
+                        }
+                    });
+                } else {
+                    $builder->where('produktname', 'LIKE', $like)
+                            ->orWhere('artikelnummer', 'LIKE', $like);
+                }
+                $builder->orWhereRaw(
+                    "REPLACE(REPLACE(REPLACE(LOWER(produktname), '-', ''), ' ', ''), '_', '') LIKE ?",
+                    [$likeCompact]
+                );
             })
             ->limit(20)
             ->get();

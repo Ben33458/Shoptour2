@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Catalog\JugendschutzService;
 use App\Services\Rental\RentalCartService;
 use App\Services\Shop\CartService;
+use App\Services\Shop\LeergutCartService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,8 +31,9 @@ use Illuminate\View\View;
 class CartController extends Controller
 {
     public function __construct(
-        private readonly CartService $cart,
+        private readonly CartService       $cart,
         private readonly RentalCartService $rentalCart,
+        private readonly LeergutCartService $leergutCart,
     ) {}
 
     /**
@@ -46,8 +48,10 @@ class CartController extends Controller
         $rentalFrom    = $this->rentalCart->getDateFrom();
         $rentalUntil   = $this->rentalCart->getDateUntil();
         $rentalTotal   = $this->rentalCart->totalNetMilli();
+        $leergutItems  = $this->leergutCart->getItems();
+        $leergutTotal  = $this->leergutCart->getCreditTotal();
         $drinksTotal   = $cartData['total_milli'];
-        $grandTotal    = $drinksTotal + $rentalTotal;
+        $grandTotal    = max(0, $drinksTotal + $rentalTotal - $leergutTotal);
         $minAge        = JugendschutzService::cartMinAge($cartData['items']);
 
         return view('shop.cart', [
@@ -64,6 +68,9 @@ class CartController extends Controller
             'rentalFrom'        => $rentalFrom,
             'rentalUntil'       => $rentalUntil,
             'rentalTotal'       => $rentalTotal,
+            'leergutItems'      => $leergutItems,
+            'leergutTotal'      => $leergutTotal,
+            'allLeergutTypes'   => $this->leergutCart->getAllTypes(),
             'isEmpty'           => empty($cartData['items']) && $rentalSummary->isEmpty(),
         ]);
     }
@@ -237,6 +244,32 @@ class CartController extends Controller
             'items'         => $items,
             'total_display' => $this->formatMilli($cartData['total_milli']),
         ]);
+    }
+
+    /**
+     * POST /warenkorb/leergut-ausgleich -- auto-fill leergut cart from current product cart.
+     */
+    public function leergutAusgleich(): RedirectResponse
+    {
+        $user = $this->authUser();
+        $this->leergutCart->fillFromCart($user);
+
+        return redirect()->route('cart.index')->with('success', 'Leergut-Ausgleich wurde befüllt. Du kannst die Mengen noch anpassen.');
+    }
+
+    /**
+     * POST /warenkorb/leergut -- update leergut qty by art_nr.
+     */
+    public function leergutUpdate(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'art_nr' => ['required', 'string', 'max:50'],
+            'qty'    => ['required', 'integer', 'min:0', 'max:99'],
+        ]);
+
+        $this->leergutCart->updateQty($validated['art_nr'], (int) $validated['qty']);
+
+        return redirect()->route('cart.index');
     }
 
     // =========================================================================

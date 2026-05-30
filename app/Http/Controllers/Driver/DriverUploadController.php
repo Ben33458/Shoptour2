@@ -6,8 +6,10 @@ namespace App\Http\Controllers\Driver;
 
 use App\Http\Controllers\Controller;
 use App\Models\Driver\DriverUpload;
+use App\Services\ImmichService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -106,6 +108,13 @@ class DriverUploadController extends Controller
             'file_size'     => $file->getSize(),
             'employee_id'   => $uploadJob->employee_id ?? $employeeId,
         ]);
+
+        // Push to Immich asynchronously (non-blocking — failure doesn't affect the upload response)
+        try {
+            app(ImmichService::class)->pushDriverUpload($uploadJob->fresh());
+        } catch (\Throwable $e) {
+            Log::warning("Immich push failed for upload {$uploadJob->id}: " . $e->getMessage());
+        }
 
         return response()->json([
             'status'           => 'uploaded',

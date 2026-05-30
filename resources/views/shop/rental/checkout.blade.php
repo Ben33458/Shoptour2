@@ -228,6 +228,24 @@
                 class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">{{ old('customer_notes') }}</textarea>
         </div>
 
+        {{-- Leihvereinbarung --}}
+        <div class="bg-white rounded-xl border border-gray-200 p-5">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="leihvereinbarung_accepted" value="1"
+                    {{ old('leihvereinbarung_accepted') ? 'checked' : '' }}
+                    class="w-4 h-4 mt-0.5 text-blue-600 rounded flex-shrink-0">
+                <span class="text-sm text-gray-700">
+                    Ich habe die
+                    <a href="{{ route('page.show', 'leihvereinbarung') }}" target="_blank"
+                       class="text-blue-600 underline">Leihvereinbarung</a>
+                    gelesen und akzeptiere sie.
+                </span>
+            </label>
+            @error('leihvereinbarung_accepted')
+                <p class="text-red-600 text-xs mt-2">{{ $message }}</p>
+            @enderror
+        </div>
+
         {{-- Submit --}}
         <div class="flex gap-3 flex-wrap">
             <button type="submit"

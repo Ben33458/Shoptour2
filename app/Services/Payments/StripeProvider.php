@@ -9,6 +9,7 @@ use App\Models\Admin\DeferredTask;
 use App\Models\Admin\Invoice;
 use App\Models\Admin\Payment;
 use App\Models\Orders\Order;
+use App\Models\Pricing\AppSetting;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -25,9 +26,9 @@ class StripeProvider implements PaymentProviderInterface
 
     public function __construct()
     {
-        $this->secretKey     = (string) config('services.stripe.secret_key', '');
-        $this->webhookSecret = (string) config('services.stripe.webhook_secret', '');
-        $this->currency      = (string) config('services.stripe.currency', 'eur');
+        $this->secretKey     = AppSetting::get('stripe.secret_key',     (string) config('services.stripe.secret_key',     ''));
+        $this->webhookSecret = AppSetting::get('stripe.webhook_secret', (string) config('services.stripe.webhook_secret', ''));
+        $this->currency      = AppSetting::get('stripe.currency',       (string) config('services.stripe.currency',       'eur'));
     }
 
     /**
@@ -41,8 +42,8 @@ class StripeProvider implements PaymentProviderInterface
     ): string {
         $invoice->loadMissing('order.customer');
 
-        // total_gross_milli -> milli-cents / 1000 = cents (Stripe uses integer cents)
-        $amountCents = (int) round($invoice->total_gross_milli / 1_000);
+        // total_gross_milli -> milli-cents / 10_000 = cents (1_000_000 milli-cents = 1,00 €)
+        $amountCents = (int) round($invoice->total_gross_milli / 10_000);
 
         $params = [
             'mode'                 => 'payment',

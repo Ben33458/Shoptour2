@@ -69,6 +69,32 @@ class RegularDeliveryTour extends Model
         'active'                => 'boolean',
     ];
 
+    private const DAY_DE = [
+        'Monday'    => 'Montag',
+        'Tuesday'   => 'Dienstag',
+        'Wednesday' => 'Mittwoch',
+        'Thursday'  => 'Donnerstag',
+        'Friday'    => 'Freitag',
+        'Saturday'  => 'Samstag',
+        'Sunday'    => 'Sonntag',
+    ];
+
+    private const FREQUENCY_DE = [
+        'weekly'    => 'wöchentlich',
+        'bi-weekly' => '14-tägig',
+        'monthly'   => 'monatlich',
+    ];
+
+    public function dayOfWeekDe(): string
+    {
+        return self::DAY_DE[$this->day_of_week] ?? $this->day_of_week;
+    }
+
+    public function frequencyDe(): string
+    {
+        return self::FREQUENCY_DE[$this->frequency] ?? $this->frequency;
+    }
+
     // -------------------------------------------------------------------------
     // Relationships
     // -------------------------------------------------------------------------

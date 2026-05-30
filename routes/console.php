@@ -83,8 +83,49 @@ Schedule::command('stats:refresh-pos --days=3')
     ->runInBackground();
 
 // ---------------------------------------------------------------------------
+// Ninox — Full Import (Ninox → shoptour2, täglich um 03:00)
+// Holt alle Datensätze aus beiden Ninox-DBs (kehr + alt) und synct
+// in die strukturierten ninox_* Tabellen (Touren, Kunden, etc.).
+// ---------------------------------------------------------------------------
+Schedule::command('ninox:full-import')
+    ->dailyAt('03:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// ---------------------------------------------------------------------------
+// Ninox — Push-Sync (shoptour2 → Ninox, alle 2 Stunden)
+// Verarbeitet ausstehende ninox.push_* deferred tasks.
+// Kein Import von Ninox → shoptour2 (verhindert Rückschreibe-Loops).
+// ---------------------------------------------------------------------------
+Schedule::command('ninox:pull')
+    ->everyTwoHours()
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// ---------------------------------------------------------------------------
+// Ninox — Sync-Bericht per Email (alle 12 Stunden)
+// ---------------------------------------------------------------------------
+Schedule::command('ninox:sync-report')
+    ->twiceDaily(7, 19)
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// ---------------------------------------------------------------------------
 // Sync-Runs Cleanup (älter als 60 Tage)
 // ---------------------------------------------------------------------------
 Schedule::call(function () {
     \App\Models\System\SyncRun::where('created_at', '<', now()->subDays(60))->delete();
 })->dailyAt('03:30');
+
+// ---------------------------------------------------------------------------
+// Knowledge Assistant — nächtlicher Sync (Paperless + BookStack → Qdrant)
+// ---------------------------------------------------------------------------
+Schedule::command('knowledge:sync --source=all')
+    ->dailyAt('04:00')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// Knowledge sync run cleanup (älter als 90 Tage)
+Schedule::command('knowledge:cleanup --days=90')
+    ->weeklyOn(0, '05:00')
+    ->withoutOverlapping();

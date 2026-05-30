@@ -4,6 +4,16 @@
 
 @section('content')
 
+{{-- ── Ninox sync ── --}}
+<div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <form method="POST" action="{{ route('admin.orders.ninox-sync') }}">
+        @csrf
+        <button type="submit" class="btn btn-outline btn-sm">
+            ↓ Ninox-Bestellungen importieren
+        </button>
+    </form>
+</div>
+
 {{-- ── Filter bar ── --}}
 <form method="GET" action="{{ route('admin.orders.index') }}">
     <div class="filter-bar">
@@ -36,7 +46,7 @@
         Bestellungen ({{ $orders->total() }})
     </div>
     <div class="table-wrap">
-        <table>
+        <table id="orders-table">
             <thead>
                 <tr>
                     <th>#</th>
@@ -45,7 +55,7 @@
                     <th>Lieferdatum</th>
                     <th class="text-right">Gesamt (brutto)</th>
                     <th>Erstellt</th>
-                    <th></th>
+                    <th data-no-sort data-no-filter data-no-resize data-no-reorder></th>
                 </tr>
             </thead>
             <tbody>
@@ -63,7 +73,7 @@
                     <td>
                         <span class="badge badge-{{ $order->status }}">{{ $order->status }}</span>
                     </td>
-                    <td>{{ $order->delivery_date?->format('d.m.Y') ?? '—' }}</td>
+                    <td data-sort="{{ $order->delivery_date?->format('Y-m-d') ?? '' }}">{{ $order->delivery_date?->format('d.m.Y') ?? '—' }}</td>
                     <td class="text-right">
                         {{ number_format($order->total_gross_milli / 1_000_000, 2, ',', '.') }} €
                     </td>
@@ -74,6 +84,8 @@
                                class="btn btn-outline btn-sm">Detail</a>
                             <a href="{{ route('admin.orders.invoice', $order) }}"
                                class="btn btn-outline btn-sm">Rechnung</a>
+                            <a href="{{ route('admin.orders.return-form', $order) }}"
+                               class="btn btn-outline btn-sm" target="_blank">↩ Rückgabe</a>
                         </div>
                     </td>
                 </tr>
@@ -92,3 +104,9 @@
 {{ $orders->links() }}
 
 @endsection
+
+@push('scripts')
+<script>
+new AdminTable('orders-table', { tableKey: 'orders-index' });
+</script>
+@endpush

@@ -27,6 +27,12 @@ class Brand extends Model
      */
     protected $fillable = [
         'name',
+        'adresse',
+        'plz',
+        'ort',
+        'land',
+        'email',
+        'website',
     ];
 
     // -------------------------------------------------------------------------

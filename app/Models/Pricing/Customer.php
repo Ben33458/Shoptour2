@@ -14,6 +14,7 @@ use App\Models\SubUser;
 use App\Models\Orders\Order;
 use App\Models\Pricing\CustomerNote;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -53,6 +54,8 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  */
 class Customer extends Model
 {
+    use HasFactory;
+
     // Lieferfreigabe delivery_status values
     public const DELIVERY_NORMAL  = 'normal';
     public const DELIVERY_WARNING = 'warning';
@@ -71,6 +74,7 @@ class Customer extends Model
         'company_name',
         'lexoffice_contact_id',
         'ninox_kunden_id',
+        'ninox_pushed_at',
         'wawi_kunden_id',
         'price_display_mode',
         'display_preferences',
@@ -94,6 +98,10 @@ class Customer extends Model
         'debt_hold_reason',
         'kunde_von',
         'birth_date',
+        'iban',
+        'iban_account_holder',
+        'sepa_mandate_ref',
+        'sepa_mandate_date',
     ];
 
     protected $casts = [
@@ -102,6 +110,7 @@ class Customer extends Model
         'debt_hold'                   => 'boolean',
         'display_preferences'         => 'array',
         'birth_date'                  => 'date',
+        'ninox_pushed_at'             => 'datetime',
     ];
 
     // -------------------------------------------------------------------------

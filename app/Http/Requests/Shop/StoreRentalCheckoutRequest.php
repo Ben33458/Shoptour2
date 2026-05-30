@@ -27,8 +27,9 @@ class StoreRentalCheckoutRequest extends FormRequest
             'event_has_power'        => 'boolean',
             'event_suitable_ground'  => 'boolean',
             'customer_notes'         => 'nullable|string|max:2000',
-            'event_delivery_mode'    => 'required|in:delivery,self_pickup',
-            'event_pickup_mode'      => 'required|in:pickup_by_us,self_return',
+            'event_delivery_mode'        => 'required|in:delivery,self_pickup',
+            'event_pickup_mode'          => 'required|in:pickup_by_us,self_return',
+            'leihvereinbarung_accepted'  => ['required', 'accepted'],
         ];
     }
 
@@ -41,8 +42,10 @@ class StoreRentalCheckoutRequest extends FormRequest
             'event_location_city.required'   => 'Bitte gib die Stadt an.',
             'event_contact_name.required'    => 'Bitte gib einen Ansprechpartner an.',
             'event_contact_phone.required'   => 'Bitte gib eine Telefonnummer an.',
-            'event_delivery_mode.required'   => 'Bitte wähle die Lieferart.',
-            'event_pickup_mode.required'     => 'Bitte wähle die Abholart.',
+            'event_delivery_mode.required'          => 'Bitte wähle die Lieferart.',
+            'event_pickup_mode.required'            => 'Bitte wähle die Abholart.',
+            'leihvereinbarung_accepted.required'    => 'Bitte akzeptiere die Leihvereinbarung.',
+            'leihvereinbarung_accepted.accepted'    => 'Bitte akzeptiere die Leihvereinbarung.',
         ];
     }
 }

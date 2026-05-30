@@ -6,6 +6,7 @@ namespace App\Models\Supplier;
 
 use App\Models\Company;
 use App\Models\Inventory\Warehouse;
+use App\Models\Procurement\GoodsReceipt;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -93,6 +94,12 @@ class PurchaseOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseOrderItem::class)->orderBy('sort_order');
+    }
+
+    /** @return HasMany<GoodsReceipt> */
+    public function goodsReceipts(): HasMany
+    {
+        return $this->hasMany(GoodsReceipt::class);
     }
 
     // =========================================================================

@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StorePurchaseOrderRequest;
 use App\Models\Catalog\Product;
 use App\Models\Inventory\Warehouse;
+use App\Models\Procurement\GoodsReceipt;
 use App\Models\Supplier\PurchaseOrder;
 use App\Models\Supplier\PurchaseOrderItem;
 use App\Models\Supplier\Supplier;
@@ -108,12 +109,61 @@ class AdminEinkaufController extends Controller
             ->unique()
             ->all();
 
+        // Also match via wawi_artikel.cArtNr (WaWi article number differs from shoptour2 artikelnummer).
+        $wawiArtikelIds = \DB::table('wawi_artikel')
+            ->where('cArtNr', 'LIKE', $like)
+            ->orWhere('cArtNr', 'LIKE', $likeNoZeros)
+            ->pluck('kArtikel')
+            ->all();
+
+        $allWawiIds = array_unique(array_merge($matchingWawiIds, $wawiArtikelIds));
+
+        // Split term into words on whitespace and common separators (handles "Vita Cola" → "Vita-Cola")
+        $words = array_values(array_filter(
+            preg_split('/[\s\-_.,\/]+/u', $term),
+            fn ($w) => mb_strlen($w) >= 1
+        ));
+
+        // ß ↔ ss alternate variant for German search terms
+        $termLower = mb_strtolower($term);
+        $termAlt   = str_contains($termLower, 'ß')
+            ? str_replace('ß', 'ss', $termLower)
+            : str_replace('ss', 'ß', $termLower);
+        $likeAlt = '%' . $termAlt . '%';
+        $hasAlt  = $termAlt !== $termLower;
+
+        // Compound-word match: strip all separators from both sides so
+        // "vitacola" matches "Vita-Cola" and "Vita Cola"
+        $termCompact     = preg_replace('/[\s\-_.,\/]+/u', '', $termLower);
+        $likeCompact     = '%' . $termCompact . '%';
+
         $query = Product::query()
-            ->where(function ($q) use ($like, $matchingWawiIds): void {
-                $q->where('produktname', 'LIKE', $like)
-                  ->orWhere('artikelnummer', 'LIKE', $like);
-                if ($matchingWawiIds) {
-                    $q->orWhereIn('wawi_artikel_id', $matchingWawiIds);
+            ->where(function ($q) use ($words, $like, $likeAlt, $hasAlt, $likeCompact, $allWawiIds): void {
+                if (count($words) > 1) {
+                    // Every word must appear somewhere in name or number
+                    $q->where(function ($wq) use ($words): void {
+                        foreach ($words as $word) {
+                            $wl = '%' . $word . '%';
+                            $wq->where(function ($inner) use ($wl): void {
+                                $inner->where('produktname', 'LIKE', $wl)
+                                      ->orWhere('artikelnummer', 'LIKE', $wl);
+                            });
+                        }
+                    });
+                } else {
+                    $q->where('produktname', 'LIKE', $like)
+                      ->orWhere('artikelnummer', 'LIKE', $like);
+                }
+                if ($hasAlt) {
+                    $q->orWhere('produktname', 'LIKE', $likeAlt);
+                }
+                // Match "vitacola" against "Vita-Cola" by stripping separators from DB field
+                $q->orWhereRaw(
+                    "REPLACE(REPLACE(REPLACE(LOWER(produktname), '-', ''), ' ', ''), '_', '') LIKE ?",
+                    [$likeCompact]
+                );
+                if ($allWawiIds) {
+                    $q->orWhereIn('wawi_artikel_id', $allWawiIds);
                 }
             })
             ->limit(20);
@@ -361,7 +411,7 @@ class AdminEinkaufController extends Controller
      */
     public function show(PurchaseOrder $purchaseOrder): View
     {
-        $purchaseOrder->load(['items.product', 'supplier', 'warehouse']);
+        $purchaseOrder->load(['items.product', 'supplier', 'warehouse', 'goodsReceipts.docScanUpload']);
 
         $warehouses = Warehouse::where(function ($q) use ($purchaseOrder): void {
                 $q->where('company_id', $purchaseOrder->company_id)
@@ -543,5 +593,40 @@ class AdminEinkaufController extends Controller
             'line_total_milli'    => $lineMilli,
             'po_total_milli'      => $purchaseOrder->fresh()->total_milli,
         ]);
+    }
+
+    // =========================================================================
+    // Anlieferungen (GoodsReceipts)
+    // =========================================================================
+
+    public function anlieferungen(Request $request): View
+    {
+        $query = GoodsReceipt::with(['supplier', 'purchaseOrder', 'docScanUpload'])
+            ->orderByDesc('arrived_at')
+            ->orderByDesc('id');
+
+        if ($supplierId = $request->input('supplier_id')) {
+            $query->where('supplier_id', $supplierId);
+        }
+        if ($status = $request->input('status')) {
+            $query->where('status', $status);
+        }
+        if ($from = $request->input('from')) {
+            $query->whereDate('arrived_at', '>=', $from);
+        }
+        if ($to = $request->input('to')) {
+            $query->whereDate('arrived_at', '<=', $to);
+        }
+
+        $goodsReceipts = $query->paginate(25)->withQueryString();
+        $suppliers     = Supplier::orderBy('name')->get(['id', 'name']);
+
+        return view('admin.einkauf.anlieferungen.index', compact('goodsReceipts', 'suppliers'));
+    }
+
+    public function anlieferungShow(GoodsReceipt $goodsReceipt): View
+    {
+        $goodsReceipt->load(['supplier', 'purchaseOrder.items.product', 'docScanUpload', 'items.product']);
+        return view('admin.einkauf.anlieferungen.show', compact('goodsReceipt'));
     }
 }

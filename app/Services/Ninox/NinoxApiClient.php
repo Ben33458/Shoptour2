@@ -103,7 +103,29 @@ class NinoxApiClient
         return $this->get("/tables/{$tableId}/records/{$recordId}");
     }
 
-    // ── HTTP helper ───────────────────────────────────────────────────────────
+    // ── Write ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Create a new record in a Ninox table.
+     * Body: [{"fields": {...}}]
+     * Returns the created record (first element).
+     */
+    public function createRecord(string $tableId, array $fields): array
+    {
+        $data = $this->post("/tables/{$tableId}/records", [['fields' => $fields]]);
+        return $data[0] ?? $data;
+    }
+
+    /**
+     * Update an existing record in a Ninox table.
+     * Body: {"fields": {...}}
+     */
+    public function updateRecord(string $tableId, string $recordId, array $fields): array
+    {
+        return $this->put("/tables/{$tableId}/records/{$recordId}", ['fields' => $fields]);
+    }
+
+    // ── HTTP helpers ──────────────────────────────────────────────────────────
 
     private function get(string $path, array $query = []): array
     {
@@ -121,12 +143,51 @@ class NinoxApiClient
 
             $data = $response->json();
 
-            // Ninox wraps records in an array or returns them directly
             if (is_array($data)) {
                 return $data;
             }
 
             return [];
+        } catch (ConnectionException $e) {
+            throw new RuntimeException("Ninox API nicht erreichbar: {$e->getMessage()}", 0, $e);
+        }
+    }
+
+    private function post(string $path, array $body): array
+    {
+        try {
+            $response = Http::withToken($this->apiKey)
+                ->accept('application/json')
+                ->timeout(30)
+                ->post($this->baseUrl . $path, $body);
+
+            if ($response->failed()) {
+                throw new RuntimeException(
+                    "Ninox API Fehler [{$response->status()}]: {$response->body()}"
+                );
+            }
+
+            return $response->json() ?? [];
+        } catch (ConnectionException $e) {
+            throw new RuntimeException("Ninox API nicht erreichbar: {$e->getMessage()}", 0, $e);
+        }
+    }
+
+    private function put(string $path, array $body): array
+    {
+        try {
+            $response = Http::withToken($this->apiKey)
+                ->accept('application/json')
+                ->timeout(30)
+                ->put($this->baseUrl . $path, $body);
+
+            if ($response->failed()) {
+                throw new RuntimeException(
+                    "Ninox API Fehler [{$response->status()}]: {$response->body()}"
+                );
+            }
+
+            return $response->json() ?? [];
         } catch (ConnectionException $e) {
             throw new RuntimeException("Ninox API nicht erreichbar: {$e->getMessage()}", 0, $e);
         }

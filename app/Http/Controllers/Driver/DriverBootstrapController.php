@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Driver;
 
 use App\Http\Controllers\Controller;
+use App\Models\Address;
 use App\Models\Catalog\ProductLeergut;
+use App\Models\Delivery\FulfillmentEvent;
 use App\Models\Delivery\Tour;
 use App\Models\Delivery\TourStop;
+use App\Models\Driver\CashRegister;
 use App\Models\Driver\DriverSetting;
 use App\Models\Driver\DriverUpload;
 use App\Models\Employee\Employee;
@@ -43,81 +46,30 @@ class DriverBootstrapController extends Controller
         /** @var int|null $employeeId */
         $employeeId = $request->attributes->get('driver_employee_id');
 
-        $date = $this->resolveDate($request);
-        $tour = $this->resolveTour($employeeId, $date);
+        $date       = $this->resolveDate($request);
+        $allTours   = $this->resolveAllToursForDate($date);
 
-        if ($tour === null) {
+        // Fallback: active in_progress tour for this driver (any date)
+        if ($allTours->isEmpty() && $employeeId !== null) {
+            $fallback = Tour::where('status', Tour::STATUS_IN_PROGRESS)
+                ->where('driver_employee_id', $employeeId)
+                ->latest('tour_date')
+                ->first();
+            if ($fallback) {
+                $allTours = collect([$fallback]);
+            }
+        }
+
+        if ($allTours->isEmpty()) {
             return response()->json([
-                'tour'  => null,
-                'stops' => [],
-                'date'  => $date,
+                'tour'       => null,
+                'stops'      => [],
+                'date'       => $date,
+                'all_tours'  => [],
             ]);
         }
 
-        $stops = $tour->stops()
-            ->with([
-                'order.items',
-                'order.customer',
-                'itemFulfillments',
-            ])
-            ->orderBy('stop_index')
-            ->get();
-
-        // Load upload counts per stop in one query (avoid N+1)
-        $stopIds      = $stops->pluck('id')->all();
-        $uploadCounts = DriverUpload::whereIn('tour_stop_id', $stopIds)
-            ->where('status', DriverUpload::STATUS_UPLOADED)
-            ->selectRaw('tour_stop_id, COUNT(*) as cnt')
-            ->groupBy('tour_stop_id')
-            ->pluck('cnt', 'tour_stop_id');
-
-        $stopsData = $stops->map(fn ($stop) => [
-            'id'          => $stop->id,
-            'tour_id'     => $stop->tour_id,
-            'order_id'    => $stop->order_id,
-            'stop_index'  => $stop->stop_index,
-            'status'      => $stop->status,
-            'arrived_at'  => $stop->arrived_at?->toIso8601String(),
-            'finished_at' => $stop->finished_at?->toIso8601String(),
-            'departed_at' => $stop->departed_at?->toIso8601String(),
-
-            // Customer / delivery details for driver display
-            'customer_name'    => $stop->order?->customer
-                ? trim(($stop->order->customer->first_name ?? '') . ' ' . ($stop->order->customer->last_name ?? ''))
-                : null,
-            'delivery_address' => $stop->order?->deliveryAddress?->oneLiner()
-                ?? $stop->order?->customer?->defaultDeliveryAddress?->oneLiner()
-                ?? $stop->order?->customer?->delivery_address_text,
-            'delivery_note'    => $stop->order?->customer?->delivery_note,
-
-            'order' => $stop->order ? [
-                'id'                       => $stop->order->id,
-                'total_gross_milli'        => $stop->order->total_gross_milli,
-                'total_pfand_brutto_milli' => $stop->order->total_pfand_brutto_milli,
-                'items'                    => $stop->order->items->map(fn ($item) => [
-                    'id'                     => $item->id,
-                    'product_id'             => $item->product_id,
-                    'quantity'               => $item->qty,
-                    'product_name'           => $item->product_name_snapshot,
-                    'artikelnummer'          => $item->artikelnummer_snapshot,
-                    'unit_price_gross_milli' => $item->unit_price_gross_milli,
-                    'unit_deposit_milli'     => $item->unit_deposit_milli,
-                ])->values(),
-            ] : null,
-
-            'item_fulfillments' => $stop->itemFulfillments->map(fn ($f) => [
-                'order_item_id'        => $f->order_item_id,
-                'delivered_qty'        => $f->delivered_qty,
-                'not_delivered_qty'    => $f->not_delivered_qty,
-                'not_delivered_reason' => $f->not_delivered_reason,
-                'note'                 => $f->note,
-            ])->values(),
-
-            // Count of successfully uploaded files for this stop
-            'uploads_count' => (int) ($uploadCounts[$stop->id] ?? 0),
-        ])->values();
-
-        // Cash register for this employee
+        // Cash register for this employee (shared across tours)
         $cashRegister = null;
         if ($employeeId !== null) {
             $employee = Employee::find($employeeId);
@@ -129,31 +81,98 @@ class DriverBootstrapController extends Controller
             }
         }
 
-        // Average stop duration per customer (seconds) across last 60 days
-        $avgDurations = $this->buildAvgDurations($stops->pluck('order.customer.id')->filter()->unique()->all());
-
-        // Leergut map: product_id → leergut article info (from wawi_artikel_attribute)
-        $leergutMap = $this->buildLeergutMap($stops);
-
-        // Delay threshold from settings (default 30%)
+        // Shared settings
         $delayThreshold = (int) DriverSetting::get('delay_threshold_percent', 30);
+        $zielkassen     = $this->buildZielkassen();
+
+        // Batch-load upload counts and metadata for all stops in one query
+        $allStopIds = $allTours->flatMap(fn ($t) => $t->stops()->pluck('id'))->all();
+        $uploadCounts = DriverUpload::whereIn('tour_stop_id', $allStopIds)
+            ->where('status', DriverUpload::STATUS_UPLOADED)
+            ->selectRaw('tour_stop_id, COUNT(*) as cnt')
+            ->groupBy('tour_stop_id')
+            ->pluck('cnt', 'tour_stop_id');
+
+        $uploadsMap = DriverUpload::whereIn('tour_stop_id', $allStopIds)
+            ->where('status', DriverUpload::STATUS_UPLOADED)
+            ->orderBy('created_at')
+            ->get(['id', 'tour_stop_id', 'mime_type', 'original_name', 'created_at'])
+            ->groupBy('tour_stop_id');
+
+        // Build full data for each tour
+        $allToursData = $allTours->map(function (Tour $tour) use ($employeeId, $uploadCounts, $uploadsMap, $cashRegister, $delayThreshold, $zielkassen) {
+            $isMine = $employeeId !== null && $tour->driver_employee_id === $employeeId;
+
+            $stops = $tour->stops()
+                ->with([
+                    'order.items',
+                    'order.deliveryAddress',
+                    'order.customer.customerGroup',
+                    'order.customer.defaultDeliveryAddress',
+                    'itemFulfillments',
+                    'events',
+                ])
+                ->orderBy('stop_index')
+                ->get();
+
+            $stopsData = $stops->map(function ($stop) use ($uploadCounts, $uploadsMap) {
+                $deliveryAddr = $stop->order?->deliveryAddress
+                    ?? $stop->order?->customer?->defaultDeliveryAddress;
+                return $this->buildStopData($stop, $deliveryAddr, $uploadCounts, $uploadsMap);
+            })->values();
+
+            $customerIds  = $stops->pluck('order.customer.id')->filter()->unique()->all();
+            $avgDurations = $this->buildAvgDurations($customerIds);
+            $leergutMap   = $this->buildLeergutMap($stops);
+            $openBalances = $this->buildOpenBalances($customerIds);
+
+            $tourTotalVpe = $stops->sum(fn ($s) =>
+                $s->order?->ninox_item_count
+                ?? $s->order?->items?->sum('qty')
+                ?? 0
+            );
+
+            $tourDate = $tour->tour_date instanceof \Illuminate\Support\Carbon
+                ? $tour->tour_date->toDateString()
+                : (string) $tour->tour_date;
+
+            return [
+                'tour' => [
+                    'id'        => $tour->id,
+                    'name'      => $tour->name,
+                    'tour_date' => $tourDate,
+                    'status'    => $tour->status,
+                    'started_at' => $tour->started_at?->toIso8601String(),
+                    'ended_at'   => $tour->ended_at?->toIso8601String(),
+                    'total_vpe'  => (int) $tourTotalVpe,
+                    'is_mine'    => $isMine,
+                ],
+                'stops'         => $stopsData,
+                'cash_register' => $isMine ? $cashRegister : null,
+                'avg_durations' => $avgDurations,
+                'leergut_map'   => $leergutMap,
+                'delay_threshold' => $delayThreshold,
+                'open_balances' => $openBalances,
+                'zielkassen'    => $isMine ? $zielkassen : [],
+            ];
+        })->values();
+
+        // Primary tour: first "mine" or first overall
+        $primary = $allToursData->firstWhere('tour.is_mine', true) ?? $allToursData->first();
 
         return response()->json([
-            'tour' => [
-                'id'         => $tour->id,
-                'tour_date'  => $tour->tour_date instanceof \Illuminate\Support\Carbon
-                    ? $tour->tour_date->toDateString()
-                    : (string) $tour->tour_date,
-                'status'     => $tour->status,
-                'started_at' => $tour->started_at?->toIso8601String(),
-                'ended_at'   => $tour->ended_at?->toIso8601String(),
-            ],
-            'stops'           => $stopsData,
+            // Backward-compat keys (primary tour)
+            'tour'            => $primary['tour'],
+            'stops'           => $primary['stops'],
+            'cash_register'   => $primary['cash_register'],
+            'avg_durations'   => $primary['avg_durations'],
+            'leergut_map'     => $primary['leergut_map'],
+            'delay_threshold' => $primary['delay_threshold'],
+            'open_balances'   => $primary['open_balances'],
+            'zielkassen'      => $primary['zielkassen'],
+            // Multi-tour support
+            'all_tours'       => $allToursData,
             'date'            => $date,
-            'cash_register'   => $cashRegister,
-            'avg_durations'   => $avgDurations,
-            'leergut_map'     => $leergutMap,
-            'delay_threshold' => $delayThreshold,
         ]);
     }
 
@@ -244,17 +263,140 @@ class DriverBootstrapController extends Controller
     }
 
     /**
-     * Find a planned/in-progress tour for the given date and optional employee.
+     * All planned/in-progress tours for the given date (regardless of driver assignment).
+     *
+     * @return \Illuminate\Support\Collection<int, Tour>
      */
-    private function resolveTour(?int $employeeId, string $date): ?Tour
+    private function resolveAllToursForDate(string $date): \Illuminate\Support\Collection
     {
-        $query = Tour::whereDate('tour_date', $date)
-            ->whereIn('status', [Tour::STATUS_PLANNED, Tour::STATUS_IN_PROGRESS]);
+        return Tour::whereDate('tour_date', $date)
+            ->whereIn('status', [Tour::STATUS_PLANNED, Tour::STATUS_IN_PROGRESS])
+            ->orderBy('id')
+            ->get();
+    }
 
-        if ($employeeId !== null) {
-            $query->where('driver_employee_id', $employeeId);
+    /**
+     * Build open invoice balances per customer_id (milli-cents).
+     * Only considers finalized invoices with remaining balance > 0.
+     *
+     * @param  int[] $customerIds
+     * @return array<int, int>  customer_id → open balance milli
+     */
+    private function buildOpenBalances(array $customerIds): array
+    {
+        if (empty($customerIds)) {
+            return [];
         }
 
-        return $query->first();
+        $rows = DB::table('invoices as i')
+            ->join('orders as o', 'o.id', '=', 'i.order_id')
+            ->leftJoin(
+                DB::raw('(SELECT invoice_id, SUM(amount_milli) as paid FROM payments GROUP BY invoice_id) as p'),
+                'p.invoice_id', '=', 'i.id'
+            )
+            ->whereIn('o.customer_id', $customerIds)
+            ->where('i.status', 'finalized')
+            ->whereRaw('(i.total_gross_milli - COALESCE(p.paid, 0)) > 0')
+            ->select(
+                'o.customer_id',
+                DB::raw('SUM(i.total_gross_milli - COALESCE(p.paid, 0)) as open_milli')
+            )
+            ->groupBy('o.customer_id')
+            ->get();
+
+        return $rows->pluck('open_milli', 'customer_id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
+    }
+
+    private function buildStopData(TourStop $stop, ?Address $deliveryAddr, $uploadCounts, $uploadsMap = []): array
+    {
+        return [
+            'id'          => $stop->id,
+            'tour_id'     => $stop->tour_id,
+            'order_id'    => $stop->order_id,
+            'stop_index'  => $stop->stop_index,
+            'status'      => $stop->status,
+            'arrived_at'  => $stop->arrived_at?->toIso8601String(),
+            'finished_at' => $stop->finished_at?->toIso8601String(),
+            'departed_at' => $stop->departed_at?->toIso8601String(),
+
+            'customer_id'      => $stop->order?->customer?->id,
+            'customer_name'    => $stop->order?->customer
+                ? trim(($stop->order->customer->first_name ?? '') . ' ' . ($stop->order->customer->last_name ?? ''))
+                : null,
+            'delivery_address' => $deliveryAddr?->oneLiner()
+                ?? $stop->order?->customer?->delivery_address_text,
+            'delivery_note'    => $stop->order?->customer?->delivery_note,
+            'is_deposit_exempt' => (bool) ($stop->order?->customer?->customerGroup?->is_deposit_exempt ?? false),
+
+            'drop_off_location'        => $deliveryAddr?->drop_off_location,
+            'drop_off_location_custom' => $deliveryAddr?->drop_off_location_custom,
+            'leave_at_door'            => (bool) ($deliveryAddr?->leave_at_door ?? false),
+
+            'payments_recorded' => $stop->events
+                ->where('event_type', FulfillmentEvent::TYPE_PAYMENT_RECORDED)
+                ->map(fn ($e) => [
+                    'amount_milli' => (int) ($e->payload_json['amount_milli'] ?? 0),
+                    'method'       => (string) ($e->payload_json['method'] ?? ''),
+                ])->values(),
+
+            'order' => $stop->order ? [
+                'id'                       => $stop->order->id,
+                'total_gross_milli'        => $stop->order->total_gross_milli,
+                'total_pfand_brutto_milli' => $stop->order->total_pfand_brutto_milli,
+                'notes'                    => $stop->order->notes,
+                'items'                    => $stop->order->items->map(fn ($item) => [
+                    'id'                     => $item->id,
+                    'product_id'             => $item->product_id,
+                    'quantity'               => $item->qty,
+                    'product_name'           => $item->product_name_snapshot,
+                    'artikelnummer'          => $item->artikelnummer_snapshot,
+                    'unit_price_gross_milli' => $item->unit_price_gross_milli,
+                    'unit_deposit_milli'     => $item->unit_deposit_milli,
+                ])->values(),
+            ] : null,
+
+            'item_fulfillments' => $stop->itemFulfillments->map(fn ($f) => [
+                'order_item_id'        => $f->order_item_id,
+                'delivered_qty'        => $f->delivered_qty,
+                'not_delivered_qty'    => $f->not_delivered_qty,
+                'not_delivered_reason' => $f->not_delivered_reason,
+                'note'                 => $f->note,
+            ])->values(),
+
+            'uploads_count' => (int) ($uploadCounts[$stop->id] ?? 0),
+            'uploads'       => ($uploadsMap[$stop->id] ?? collect())->map(fn ($u) => [
+                'id'            => $u->id,
+                'mime_type'     => $u->mime_type,
+                'original_name' => $u->original_name,
+                'created_at'    => $u->created_at?->toIso8601String(),
+            ])->values()->all(),
+        ];
+    }
+
+    /**
+     * Build list of target cash registers for tour-end deposit.
+     * Excludes driver wallets (type = wallet).
+     *
+     * @return array<int, array{id: int, name: string, register_type: string}>
+     */
+    private function buildZielkassen(): array
+    {
+        return CashRegister::where('is_active', true)
+            ->whereIn('register_type', [
+                CashRegister::TYPE_SAFE,
+                CashRegister::TYPE_REGISTER,
+                CashRegister::TYPE_BANK,
+            ])
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($r) => [
+                'id'            => $r->id,
+                'name'          => $r->name,
+                'register_type' => $r->register_type,
+            ])
+            ->values()
+            ->all();
     }
 }

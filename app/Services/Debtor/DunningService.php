@@ -102,6 +102,12 @@ class DunningService
                 continue;
             }
 
+            // Skip customers with no email address — sending would fail anyway
+            $recipientEmail = $customer->billing_email ?? $customer->email;
+            if (empty($recipientEmail)) {
+                continue;
+            }
+
             $eligibleVouchers = $customer->openVouchers
                 ->filter(fn (LexofficeVoucher $v) => ! $v->is_dunning_blocked);
 
@@ -220,7 +226,8 @@ class DunningService
             $thresholdNotMet = ! $anyReady;
         }
 
-        $canForce = ! $noOpenInvoices;
+        $noEmail  = empty($customer->billing_email) && empty($customer->email);
+        $canForce = ! $noOpenInvoices && ! $noEmail;
 
         return [
             'hold'                => (bool) $customer->debt_hold,
@@ -228,6 +235,7 @@ class DunningService
             'all_invoices_blocked'=> $allBlocked,
             'threshold_not_met'   => $thresholdNotMet,
             'no_open_invoices'    => $noOpenInvoices,
+            'no_email'            => $noEmail,
             'can_force'           => $canForce,
         ];
     }

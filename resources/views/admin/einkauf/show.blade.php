@@ -370,6 +370,41 @@
 </div>
 @endif
 
+{{-- ── Lieferschein-Scans der Wareneingänge ── --}}
+@php $receiptsWithScan = $purchaseOrder->goodsReceipts->filter(fn($r) => $r->docScanUpload !== null); @endphp
+@if($receiptsWithScan->isNotEmpty())
+<div class="card mb-3">
+    <div class="card-header">📄 Lieferschein-Scans</div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+        @foreach($receiptsWithScan as $receipt)
+            @php $scan = $receipt->docScanUpload; @endphp
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                @if(in_array(strtolower(pathinfo($scan->storage_path, PATHINFO_EXTENSION)), ['jpg','jpeg','png']))
+                    <a href="{{ route('admin.docscan.file', $scan) }}" target="_blank" style="flex-shrink:0">
+                        <img src="{{ route('admin.docscan.file', $scan) }}"
+                             alt="Lieferschein"
+                             style="max-height:100px;max-width:160px;border:1px solid #e5e7eb;border-radius:4px;object-fit:contain">
+                    </a>
+                @endif
+                <div style="font-size:13px">
+                    <div><strong>{{ $scan->original_filename }}</strong></div>
+                    <div class="text-muted" style="margin-top:4px">
+                        Eingang: {{ $receipt->arrived_at?->format('d.m.Y') ?? '—' }}
+                        @if($scan->intern_zugeordnet_at)
+                            · Zugeordnet: {{ $scan->intern_zugeordnet_at->format('d.m.Y H:i') }}
+                        @endif
+                    </div>
+                </div>
+                <a href="{{ route('admin.docscan.file', $scan) }}" target="_blank"
+                   class="btn btn-outline btn-sm" style="margin-left:auto">
+                    Öffnen ↗
+                </a>
+            </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
 @push('scripts')
 <script>
 // ── Correction form: toggle ───────────────────────────────────────────────────

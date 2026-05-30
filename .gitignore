@@ -35,6 +35,15 @@ Thumbs.db
 ninox_all_data.json
 *.xlsx
 
+# Uploads und generierte Dateien (kein Inhalt im Repo)
+/app/storage/
+/storage/imports/
+/storage/app/
+
+# Geschäftsdokumente im mvp-Ordner
+/mvp/Kassenberichte/
+/mvp/*.pdf
+
 # Umgebungsvarianten mit echten Credentials
 .env.testing
 .env.local

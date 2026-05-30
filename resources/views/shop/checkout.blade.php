@@ -8,7 +8,7 @@
 
     {{-- Step indicators --}}
     <div class="flex items-center gap-2 mb-8 overflow-x-auto pb-2">
-        @foreach(['Lieferart', 'Adresse', 'Liefertermin', 'Zahlung', 'Zusammenfassung'] as $i => $label)
+        @foreach(['Lieferart', 'Adresse', 'Termin', 'Zahlung', 'Zusammenfassung'] as $i => $label)
             <button @click="goToStep({{ $i + 1 }})"
                     :class="step === {{ $i + 1 }}
                         ? 'bg-amber-500 text-white'
@@ -181,11 +181,11 @@
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                             <label class="text-xs text-gray-500">PLZ *</label>
-                            <input type="text" name="new_address[zip]" :required="selectedAddressId === 'new'" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <input type="text" name="new_address[zip]" x-model="newAddressZip" :required="selectedAddressId === 'new'" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div class="sm:col-span-2">
                             <label class="text-xs text-gray-500">Stadt *</label>
-                            <input type="text" name="new_address[city]" :required="selectedAddressId === 'new'" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                            <input type="text" name="new_address[city]" x-model="newAddressCity" :required="selectedAddressId === 'new'" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                         </div>
                     </div>
                     <div>
@@ -205,10 +205,18 @@
                         @endforeach
                     </select>
 
-                    <div x-show="dropOffLocation === 'sonstiges'" x-cloak class="mt-2">
-                        <input type="text" name="drop_off_location_custom" placeholder="Abstellort beschreiben..."
-                               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    </div>
+                    <template x-if="dropOffLocation === 'sonstiges'">
+                        <div class="mt-2">
+                            <input type="text" name="drop_off_location_custom"
+                                   x-model="dropOffLocationCustom"
+                                   placeholder="Abstellort beschreiben..."
+                                   class="w-full border rounded-lg px-3 py-2 text-sm"
+                                   :class="stepErrors.dropOffLocationCustom ? 'border-red-400' : 'border-gray-300'">
+                            <p x-show="stepErrors.dropOffLocationCustom"
+                               x-text="stepErrors.dropOffLocationCustom"
+                               class="text-red-600 text-xs mt-1"></p>
+                        </div>
+                    </template>
 
                     <label class="flex items-center gap-2 mt-3 text-sm text-gray-600 cursor-pointer">
                         <input type="checkbox" name="leave_at_door" value="1" class="accent-amber-500">
@@ -252,48 +260,97 @@
         </div>
 
         {{-- ================================================================
-             Step 3: Liefertermin
+             Step 3: Liefertermin / Abholtermin
              ================================================================ --}}
         <div x-show="step === 3" x-cloak class="space-y-4">
             <div class="bg-white rounded-2xl border border-gray-100 p-6">
-                <h2 class="font-bold text-gray-900 mb-4">Wunsch-Liefertermin</h2>
 
-                @if($tours->isNotEmpty())
-                    <div class="mb-4">
-                        <label class="text-sm font-medium text-gray-700 mb-1 block">Tour</label>
-                        <select name="tour_id" x-model="selectedTourId"
-                                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                            @foreach($tours as $tour)
-                                <option value="{{ $tour->id }}"
-                                    {{ $customerTourId == $tour->id ? 'selected' : '' }}>
-                                    {{ $tour->name }} ({{ $tour->day_of_week }}, {{ $tour->frequency }})
-                                    @if($tour->min_order_value_milli > 0)
-                                        — Mindestbestellwert {{ milli_to_eur($tour->min_order_value_milli) }}
-                                    @endif
-                                </option>
-                            @endforeach
-                        </select>
-                        {{-- BUG-11: minimum order value warning --}}
-                        <div x-show="minOrderWarning" x-cloak
-                             class="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
-                            <svg class="w-4 h-4 mt-0.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                            </svg>
-                            <span x-text="minOrderWarning"></span>
+                {{-- ── Abholung ── --}}
+                <template x-if="deliveryType === 'pickup'">
+                    <div class="space-y-4">
+                        <h2 class="font-bold text-gray-900">Abholtermin</h2>
+
+                        <div>
+                            <label class="text-sm font-medium text-gray-700 mb-1 block">Abholdatum</label>
+                            <input type="date" name="pickup_date" x-model="pickupDate"
+                                   min="{{ now()->addDay()->format('Y-m-d') }}"
+                                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        </div>
+
+                        <div x-show="availableSlots.length > 0">
+                            <label class="text-sm font-medium text-gray-700 mb-1 block">Zeitfenster (1 Stunde)</label>
+                            <select name="pickup_time_from" x-model="pickupTimeFrom"
+                                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                                <template x-for="slot in availableSlots" :key="slot.from">
+                                    <option :value="slot.from" x-text="slot.from + ' – ' + slot.to + ' Uhr'"></option>
+                                </template>
+                            </select>
+                            <input type="hidden" name="pickup_time_to"
+                                   :value="availableSlots.find(s => s.from === pickupTimeFrom)?.to ?? ''">
+                        </div>
+
+                        <div x-show="pickupDate && isHoliday(pickupDate)"
+                             class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                            Dieser Tag ist ein gesetzlicher Feiertag — bitte wähle ein anderes Datum.
+                        </div>
+                        <div x-show="pickupDate && !isHoliday(pickupDate) && availableSlots.length === 0"
+                             class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            Für diesen Tag sind keine Öffnungszeiten hinterlegt.
                         </div>
                     </div>
-                @endif
+                </template>
+
+                {{-- ── Heimlieferung ── --}}
+                <template x-if="deliveryType === 'home_delivery'">
+                <div>
+                <h2 class="font-bold text-gray-900 mb-4">Wunsch-Liefertermin</h2>
+
+                <div class="mb-4" x-show="visibleTours.length > 0">
+                    <label class="text-sm font-medium text-gray-700 mb-1 block">Tour</label>
+                    <select name="tour_id" x-model="selectedTourId"
+                            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <template x-for="tour in visibleTours" :key="tour.id">
+                            <option :value="String(tour.id)"
+                                    x-text="tour.name + ' (' + tour.day_de + ', ' + tour.freq_de + ')' + (tour.min_order > 0 ? ' — Mindestbestellwert ' + (tour.min_order / 1000000).toFixed(2).replace('.', ',') + ' €' : '')">
+                            </option>
+                        </template>
+                    </select>
+                    {{-- BUG-11: minimum order value warning --}}
+                    <div x-show="minOrderWarning" x-cloak
+                         class="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
+                        <svg class="w-4 h-4 mt-0.5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        </svg>
+                        <span x-text="minOrderWarning"></span>
+                    </div>
+                </div>
+                <div x-show="selectedAddressId === 'new' && newAddressZip.length >= 4 && visibleTours.length === 0"
+                     class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Für diese PLZ wurde keine Heimdienst-Tour gefunden.
+                </div>
 
                 <div>
-                    <label class="text-sm font-medium text-gray-700 mb-1 block">Datum *</label>
-                    <input type="date" name="delivery_date" x-model="deliveryDate"
-                           min="{{ now()->addDay()->format('Y-m-d') }}"
-                           class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    <p class="text-xs text-gray-400 mt-1">
-                        Bitte waehle ein Datum in der Zukunft.
-                    </p>
+                    <label class="text-sm font-medium text-gray-700 mb-1 block">Nächster Liefertermin</label>
+
+                    {{-- Automatisch aus Ninox ermitteltes Datum --}}
+                    <template x-if="deliveryDate">
+                        <p class="text-sm font-semibold text-gray-900 py-2"
+                           x-text="new Date(deliveryDate + 'T00:00:00').toLocaleDateString('de-DE', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})">
+                        </p>
+                    </template>
+
+                    {{-- Fallback: kein Ninox-Termin vorhanden --}}
+                    <template x-if="!deliveryDate">
+                        <input type="date" x-model="deliveryDate"
+                               min="{{ now()->addDay()->format('Y-m-d') }}"
+                               class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    </template>
+
+                    <input type="hidden" name="delivery_date" :value="deliveryDate">
                 </div>
+                </div>
+                </template>
             </div>
 
             <div class="flex justify-between">
@@ -301,7 +358,8 @@
                         class="border border-gray-300 text-gray-600 font-medium px-6 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
                     Zurueck
                 </button>
-                <button type="button" @click="nextStep()" :disabled="!deliveryDate"
+                <button type="button" @click="nextStep()"
+                        :disabled="deliveryType === 'home_delivery' ? !deliveryDate : (!pickupDate || (availableSlots.length > 0 && !pickupTimeFrom))"
                         class="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-medium px-6 py-2.5 rounded-xl transition-colors">
                     Weiter
                 </button>
@@ -338,6 +396,101 @@
                         </div>
                     </label>
                 @endforeach
+
+                {{-- SEPA-Lastschrift: Mandat prüfen / eingeben --}}
+                <div x-show="paymentMethod === 'sepa'" x-cloak
+                     class="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4"
+                     x-data="{
+                         useExisting: {{ $sepaMandateInfo ? 'true' : 'false' }},
+                         iban: '',
+                         ibanError: '',
+                         bankName: '',
+                         bankLookupTimer: null,
+                         validateIban() {
+                             const v = this.iban.replace(/\s+/g, '').toUpperCase();
+                             if (!v) { this.ibanError = ''; return; }
+                             if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(v)) {
+                                 this.ibanError = 'Ungültiges IBAN-Format.'; return;
+                             }
+                             const r = (v.slice(4) + v.slice(0, 4)).split('').map(c =>
+                                 /[A-Z]/.test(c) ? String(c.charCodeAt(0) - 55) : c
+                             ).join('');
+                             let rem = 0;
+                             for (let i = 0; i < r.length; i++) {
+                                 rem = (rem * 10 + parseInt(r[i])) % 97;
+                             }
+                             this.ibanError = rem === 1 ? '' : 'Die IBAN ist ungültig (Prüfziffer stimmt nicht).';
+                         },
+                         lookupBank(raw) {
+                             clearTimeout(this.bankLookupTimer);
+                             const v = raw.replace(/\s+/g, '').toUpperCase();
+                             if (v.startsWith('DE') && v.length >= 12) {
+                                 this.bankLookupTimer = setTimeout(() => {
+                                     fetch('/shop/bank-lookup?iban=' + encodeURIComponent(v))
+                                         .then(r => r.json())
+                                         .then(d => { this.bankName = d.bank_name || ''; })
+                                         .catch(() => {});
+                                 }, 300);
+                             } else {
+                                 this.bankName = '';
+                             }
+                         }
+                     }">
+
+                    @if($sepaMandateInfo)
+                        <p class="text-sm font-semibold text-blue-800 mb-2">Vorhandenes SEPA-Mandat</p>
+                        <div class="text-sm text-blue-700 space-y-0.5 mb-3">
+                            <p><span class="text-blue-500">IBAN:</span>
+                                {{ app(\App\Services\Payments\IbanValidator::class)->mask($sepaMandateInfo->iban) }}</p>
+                            @if($sepaMandateInfo->account_holder)
+                                <p><span class="text-blue-500">Kontoinhaber:</span> {{ $sepaMandateInfo->account_holder }}</p>
+                            @endif
+                            @if($sepaMandateInfo->mandate_date)
+                                <p><span class="text-blue-500">Mandat vom:</span>
+                                    {{ \Carbon\Carbon::parse($sepaMandateInfo->mandate_date)->format('d.m.Y') }}</p>
+                            @endif
+                        </div>
+                        <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                            <input type="checkbox" @change="useExisting = !$event.target.checked"
+                                   class="accent-amber-500">
+                            Anderes Konto verwenden
+                        </label>
+                    @endif
+
+                    {{-- Neue IBAN eingeben --}}
+                    <div x-show="!useExisting" class="mt-3 space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">IBAN</label>
+                            <input type="text" name="sepa_iban" x-model="iban"
+                                   @blur="validateIban()"
+                                   @input="lookupBank($event.target.value)"
+                                   placeholder="z.B. DE89 3704 0044 0532 0130 00"
+                                   class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                   :class="ibanError ? 'border-red-400' : 'border-gray-300'">
+                            <p x-show="bankName" x-text="'✓ ' + bankName"
+                               class="mt-1 text-xs text-green-600 font-medium"></p>
+                            <p x-show="ibanError" x-text="ibanError" class="mt-1 text-xs text-red-600"></p>
+                            @error('sepa_iban')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Kontoinhaber</label>
+                            <input type="text" name="sepa_account_holder"
+                                   placeholder="Vor- und Nachname / Firmenname"
+                                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+                            @error('sepa_account_holder')
+                                <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            Durch Angabe der IBAN erteilst du ein SEPA-Lastschriftmandat.
+                            Der Betrag wird nach Lieferung eingezogen.
+                        </p>
+                    </div>
+
+                    <input type="hidden" name="sepa_use_existing" :value="useExisting ? '1' : '0'">
+                </div>
             </div>
 
             <div class="flex justify-between">
@@ -493,9 +646,15 @@
                         <p class="text-gray-500 font-medium mb-1">Abholort</p>
                         <p class="text-gray-900" x-text="selectedWarehouseDisplay || '—'"></p>
                     </div>
-                    <div>
+                    <div x-show="deliveryType === 'home_delivery'">
                         <p class="text-gray-500 font-medium mb-1">Liefertermin</p>
                         <p class="text-gray-900" x-text="deliveryDate || '-'"></p>
+                    </div>
+                    <div x-show="deliveryType === 'pickup'">
+                        <p class="text-gray-500 font-medium mb-1">Abholtermin</p>
+                        <p class="text-gray-900"
+                           x-text="pickupDate ? (new Date(pickupDate + 'T00:00:00').toLocaleDateString('de-DE', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'}) + (pickupTimeFrom ? ', ' + pickupTimeFrom + ' – ' + (availableSlots.find(s => s.from === pickupTimeFrom)?.to ?? '') + ' Uhr' : '')) : '-'">
+                        </p>
                     </div>
                     <div>
                         <p class="text-gray-500 font-medium mb-1">Zahlungsmethode</p>
@@ -590,9 +749,16 @@
                         </div>
                     @endif
 
+                    @if($leergutTotal > 0)
+                        <div class="flex justify-between text-amber-700">
+                            <span>Leergut-Gutschrift</span>
+                            <span>−{{ milli_to_eur($leergutTotal) }}</span>
+                        </div>
+                    @endif
+
                     <div class="flex justify-between font-bold text-gray-900 text-base pt-2 mt-1 border-t border-gray-200">
                         <span>Gesamtbetrag</span>
-                        <span>{{ milli_to_eur($cartData['total_milli'] + $rentalTotal) }}</span>
+                        <span>{{ milli_to_eur(max(0, $cartData['total_milli'] + $rentalTotal - $leergutTotal)) }}</span>
                     </div>
                 </div>
             </div>
@@ -618,24 +784,54 @@
                 <span x-text="minOrderWarning"></span>
             </div>
 
+            {{-- AGB + Widerruf Pflicht-Checkbox --}}
+            <div class="space-y-3 border border-gray-200 rounded-xl p-4 bg-gray-50 text-sm">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="agb_accepted" value="1" required
+                           x-model="agbAccepted"
+                           class="mt-0.5 accent-amber-500 w-4 h-4 shrink-0">
+                    <span class="text-gray-700">
+                        Ich habe die
+                        <a href="{{ route('page.show', 'agb') }}" target="_blank" class="underline hover:text-amber-600">AGB</a>
+                        und die
+                        <a href="{{ route('page.show', 'widerruf') }}" target="_blank" class="underline hover:text-amber-600">Widerrufsbelehrung</a>
+                        gelesen und bin damit einverstanden. Ich nehme zur Kenntnis, dass ich ein
+                        14-tägiges Widerrufsrecht habe, das bei Lebensmitteln und Getränken
+                        gemäß § 312g Abs. 2 Nr. 2 BGB ausgeschlossen sein kann.
+                        <span class="text-red-500">*</span>
+                    </span>
+                </label>
+
+                @if($minAge > 0)
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="age_confirmed" value="1" required
+                           x-model="ageConfirmed"
+                           class="mt-0.5 accent-amber-500 w-4 h-4 shrink-0">
+                    <span class="text-gray-700">
+                        Ich bestätige, dass ich mindestens <strong>{{ $minAge }} Jahre</strong> alt bin.
+                        Der Verkauf von Alkohol an Personen unter {{ $minAge }} Jahren ist gesetzlich verboten.
+                        <span class="text-red-500">*</span>
+                    </span>
+                </label>
+                @endif
+
+                <p class="text-xs text-gray-400">
+                    <span class="text-red-500">*</span> Pflichtfeld — Bestellung ohne Zustimmung nicht möglich.
+                </p>
+            </div>
+
             {{-- Submit --}}
             <div class="flex justify-between">
                 <button type="button" @click="prevStep()"
                         class="border border-gray-300 text-gray-600 font-medium px-6 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
-                    Zurueck
+                    Zurück
                 </button>
-                <button type="submit" :disabled="submitting || !!minOrderWarning"
+                <button type="submit" :disabled="submitting || !!minOrderWarning || !agbAccepted {{ $minAge > 0 ? '|| !ageConfirmed' : '' }}"
                         class="bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white font-bold px-8 py-3 rounded-xl transition-colors">
                     <span x-show="!submitting">Jetzt verbindlich bestellen</span>
                     <span x-show="submitting" x-cloak>Bestellung wird verarbeitet...</span>
                 </button>
             </div>
-            <p class="text-xs text-gray-400 text-center">
-                Mit deiner Bestellung akzeptierst du unsere
-                <a href="{{ route('page.show', 'agb') }}" target="_blank" class="underline hover:text-gray-600">AGB</a>
-                und
-                <a href="{{ route('page.show', 'datenschutz') }}" target="_blank" class="underline hover:text-gray-600">Datenschutzerklaerung</a>.
-            </p>
         </div>
 
         {{-- Validation errors --}}
@@ -676,12 +872,19 @@ function checkoutWizard() {
 
     const eventLocations = @json($eventLocationsForJs);
 
-    // BUG-11: tour minimum order values (milli-cents, 0 = no minimum)
-    const tourMinValues = {
-        @foreach($tours as $tour)
-        '{{ $tour->id }}': {{ $tour->min_order_value_milli ?? 0 }},
-        @endforeach
-    };
+    // Next scheduled tour dates from Ninox (keyed by regular_delivery_tour id)
+    // All active tours with delivery areas and next dates — used for
+    // client-side tour lookup when the customer enters a new address.
+    const allTours = @json($allToursForJs);
+
+    // IDs of tours pre-resolved from the customer's default address.
+    const serverTourIds = @json($tours->pluck('id')->values());
+
+    // Pickup locations with opening hours (keyed by day_of_week 0–6)
+    const pickupLocations = @json($pickupLocationsForJs);
+
+    // Gesetzliche Feiertage als Set für schnelle Lookup (YYYY-MM-DD)
+    const holidayDates = new Set(@json($holidayDates));
 
     // BUG-11: cart gross total passed from server (milli-cents)
     const cartTotalMilli = {{ $cartData['total_milli'] ?? 0 }};
@@ -703,6 +906,8 @@ function checkoutWizard() {
     return {
         step: {{ $errors->any() ? 5 : 1 }},
         submitting: false,
+        agbAccepted: false,
+        ageConfirmed: false,
 
         // Step 1
         deliveryType: 'home_delivery',
@@ -711,6 +916,8 @@ function checkoutWizard() {
         selectedAddressId: '{{ $defaultAddress?->id ?? "new" }}',
         selectedWarehouseId: '',
         dropOffLocation: '{{ $defaultAddress?->drop_off_location ?? "" }}',
+        dropOffLocationCustom: '{{ old('drop_off_location_custom', $defaultAddress?->drop_off_location_custom ?? '') }}',
+        stepErrors: {},
         selectedEventLocationId: '',
         eventLocName: '',
         eventLocStreet: '',
@@ -720,6 +927,13 @@ function checkoutWizard() {
         // Step 3
         deliveryDate: '{{ $hasRentalItems && $rentalFrom ? $rentalFrom->format("Y-m-d") : "" }}',
         selectedTourId: '{{ $customerTourId ?? ($tours->first()?->id ?? "") }}',
+        newAddressZip: '',
+        newAddressCity: '',
+        dynamicTours: [],
+        // Pickup
+        pickupDate: '',
+        pickupTimeFrom: '',
+        availableSlots: [],
 
         // Step 4
         paymentMethod: '',
@@ -761,18 +975,150 @@ function checkoutWizard() {
             return paymentLabels[this.paymentMethod] || this.paymentMethod;
         },
 
+        get visibleTours() {
+            if (this.selectedAddressId === 'new') return this.dynamicTours;
+            return allTours.filter(t => serverTourIds.includes(t.id));
+        },
+
+        nextDateForTourId(id) {
+            const t = allTours.find(t => String(t.id) === String(id));
+            return t?.next_date || '';
+        },
+
+        refreshDynamicTours() {
+            if (this.selectedAddressId !== 'new') return;
+            const zip  = this.newAddressZip.trim();
+            const city = this.newAddressCity.trim().toLowerCase();
+            if (zip.length < 4) {
+                this.dynamicTours = [];
+                return;
+            }
+            this.dynamicTours = allTours.filter(t =>
+                t.areas.some(a =>
+                    a.postal_code === zip &&
+                    (!city || a.city_name.includes(city) || city.includes(a.city_name))
+                )
+            );
+            if (this.dynamicTours.length > 0 && !this.dynamicTours.find(t => String(t.id) === String(this.selectedTourId))) {
+                this.selectedTourId = String(this.dynamicTours[0].id);
+                this.deliveryDate   = this.dynamicTours[0].next_date || '';
+            }
+        },
+
+        isHoliday(dateStr) {
+            return holidayDates.has(dateStr);
+        },
+
+        generateSlots(from, to) {
+            const slots = [];
+            let cur = from;
+            while (cur < to) {
+                const [h, m] = cur.split(':').map(Number);
+                const next = String(h + 1).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+                if (next > to) break;
+                slots.push({ from: cur, to: next });
+                cur = next;
+            }
+            return slots;
+        },
+
+        // Called when the user manually changes the date — regenerates slots, keeps first available.
+        refreshPickupSlots() {
+            const loc = pickupLocations.find(l => String(l.id) === String(this.selectedWarehouseId));
+            if (!loc || !this.pickupDate) { this.availableSlots = []; return; }
+            if (this.isHoliday(this.pickupDate)) { this.availableSlots = []; return; }
+            const dow   = new Date(this.pickupDate + 'T00:00:00').getDay();
+            const oh    = loc.opening_hours[dow];
+            if (!oh) { this.availableSlots = []; return; }
+            const slots = this.generateSlots(oh.from, oh.to);
+            this.availableSlots = slots;
+            if (slots.length > 0 && !slots.find(s => s.from === this.pickupTimeFrom)) {
+                this.pickupTimeFrom = slots[0].from;
+            }
+        },
+
+        // Finds the next available pickup date + slot that is at least 30 min from now.
+        initPickupDefaults() {
+            if (this.deliveryType !== 'pickup' || !this.selectedWarehouseId) return;
+            const loc = pickupLocations.find(l => String(l.id) === String(this.selectedWarehouseId));
+            if (!loc) return;
+            const earliest = new Date(Date.now() + 30 * 60 * 1000);
+            for (let d = 0; d < 14; d++) {
+                const date = new Date();
+                date.setDate(date.getDate() + d);
+                const dow     = date.getDay();
+                const dateStr = date.toISOString().slice(0, 10);
+                if (this.isHoliday(dateStr)) continue;
+                const oh      = loc.opening_hours[dow];
+                if (!oh) continue;
+                const slots   = this.generateSlots(oh.from, oh.to);
+                for (const slot of slots) {
+                    if (new Date(dateStr + 'T' + slot.from + ':00') >= earliest) {
+                        this.pickupDate     = dateStr;
+                        this.availableSlots = slots;
+                        this.pickupTimeFrom = slot.from;
+                        return;
+                    }
+                }
+            }
+        },
+
         // BUG-11: returns formatted minimum order value string when cart is below threshold, else null
         get minOrderWarning() {
             if (this.deliveryType !== 'home_delivery') return null;
             if (!hasProducts) return null;
-            const min = tourMinValues[this.selectedTourId] || 0;
+            const tour = allTours.find(t => String(t.id) === String(this.selectedTourId));
+            const min = tour?.min_order || 0;
             if (min <= 0 || cartTotalMilli >= min) return null;
             const minEur = (min / 1_000_000).toFixed(2).replace('.', ',');
             const curEur = (cartTotalMilli / 1_000_000).toFixed(2).replace('.', ',');
             return `Mindestbestellwert ${minEur}\u00a0\u20ac nicht erreicht (aktuell ${curEur}\u00a0\u20ac).`;
         },
 
+        init() {
+            // Auto-set delivery date from next tour date on load.
+            // Does not overwrite a rental date that was pre-filled server-side.
+            if (!this.deliveryDate && this.selectedTourId) {
+                this.deliveryDate = this.nextDateForTourId(this.selectedTourId);
+            }
+
+            // Update delivery date when tour selection changes.
+            this.$watch('selectedTourId', (id) => {
+                if (this.deliveryType === 'home_delivery') {
+                    this.deliveryDate = this.nextDateForTourId(id);
+                }
+            });
+
+            // Re-resolve tours when a new address PLZ or city is typed.
+            this.$watch('newAddressZip',  () => this.refreshDynamicTours());
+            this.$watch('newAddressCity', () => this.refreshDynamicTours());
+
+            // Reset dynamic tours when switching back to an existing address.
+            this.$watch('selectedAddressId', (id) => {
+                if (id !== 'new') this.dynamicTours = [];
+            });
+
+            // Refresh pickup slots when user manually changes the date.
+            this.$watch('pickupDate', () => this.refreshPickupSlots());
+
+            // Re-init pickup defaults when warehouse or delivery type changes.
+            this.$watch('selectedWarehouseId', () => this.initPickupDefaults());
+            this.$watch('deliveryType', (type) => {
+                if (type === 'pickup') this.initPickupDefaults();
+            });
+
+            // If pickup is already selected on load (e.g. back-navigation), init immediately.
+            if (this.deliveryType === 'pickup') this.initPickupDefaults();
+        },
+
         nextStep() {
+            this.stepErrors = {};
+            if (this.step === 2) {
+                if (this.dropOffLocation === 'sonstiges' && !this.dropOffLocationCustom.trim()) {
+                    this.stepErrors.dropOffLocationCustom = 'Bitte beschreibe den Abstellort.';
+                    return;
+                }
+            }
             if (this.step < 5) this.step++;
             window.scrollTo({ top: 0, behavior: 'smooth' });
         },

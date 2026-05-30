@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee\Employee;
 use App\Services\Shop\CartMergeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -70,9 +71,22 @@ class LoginController extends Controller
         /** @var \App\Models\User $user */
         $user = Auth::user();
 
-        return redirect()->intended(
-            $user->hasAdminAccess() ? route('admin.dashboard') : '/mein-konto'
-        );
+        if ($user->isAdmin()) {
+            return redirect()->intended(route('admin.dashboard'));
+        }
+
+        if ($user->isMitarbeiter()) {
+            // Link web-auth to the PIN session so the /mein area is accessible
+            $employee = Employee::where('user_id', $user->id)->first();
+            if ($employee) {
+                $request->session()->put('employee_id',   $employee->id);
+                $request->session()->put('employee_name', $employee->full_name);
+                return redirect()->intended('/mein');
+            }
+            return redirect()->intended(route('admin.dashboard'));
+        }
+
+        return redirect()->intended('/mein-konto');
     }
 
     /**

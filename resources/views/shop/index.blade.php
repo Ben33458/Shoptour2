@@ -25,25 +25,7 @@ $viewLabels = [
 
     {{-- === Mobile: Warengruppen-Leiste + Filter-Button (immer sichtbar) ===== --}}
     <div class="lg:hidden w-full mb-2">
-        {{-- Horizontale Warengruppen-Chips --}}
-        @if($warengruppen->isNotEmpty())
-        <div class="flex gap-2 overflow-x-auto pb-2 mb-3 scrollbar-hide" style="-webkit-overflow-scrolling:touch;scrollbar-width:none">
-            <a href="{{ route('shop.products', array_filter(['suche' => $search, 'sort' => $sort])) }}"
-               class="flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors whitespace-nowrap
-                      {{ !$warengruppeId && !$categoryId ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400' }}">
-                Alle
-            </a>
-            @foreach($warengruppen as $wg)
-                @if($wg->products_count > 0)
-                <a href="{{ route('shop.products', array_filter(['warengruppe' => $wg->id, 'suche' => $search, 'sort' => $sort])) }}"
-                   class="flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors whitespace-nowrap
-                          {{ $warengruppeId == $wg->id ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400' }}">
-                    {{ $wg->name }}
-                </a>
-                @endif
-            @endforeach
-        </div>
-        @endif
+        {{-- Horizontale Warengruppen-Chips (ausgeblendet) --}}
 
         {{-- Filter-Button (Kategorien / Marken) --}}
         <button @click="filterOpen = true"
@@ -52,7 +34,7 @@ $viewLabels = [
                 <svg class="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"/></svg>
                 <span>
                     @if($categoryId)
-                        {{ $categories->flatMap(fn($c) => $c->children->prepend($c))->firstWhere('id', $categoryId)?->name ?? 'Kategorie' }}
+                        {{ $categories->flatMap(fn($c) => collect([$c])->concat($c->children))->firstWhere('id', $categoryId)?->name ?? 'Kategorie' }}
                     @else
                         Kategorien &amp; Filter
                     @endif
@@ -111,27 +93,7 @@ $viewLabels = [
             </nav>
         </div>
 
-        {{-- Warengruppen filter --}}
-        @if($warengruppen->isNotEmpty())
-        <div>
-            <h2 class="font-semibold text-sm text-gray-500 uppercase tracking-wide mb-3">Warengruppen</h2>
-            <nav class="space-y-1">
-                <a href="{{ route('shop.products', array_filter(['suche' => $search, 'brand' => $brandId, 'gebinde' => $gebindeId, 'sort' => $sort])) }}"
-                   class="block px-3 py-1.5 rounded-lg text-sm {{ !$warengruppeId ? 'bg-amber-100 text-amber-700 font-medium' : 'text-gray-600 hover:bg-gray-100' }}">
-                    Alle Warengruppen
-                </a>
-                @foreach($warengruppen as $wg)
-                    @if($wg->products_count > 0)
-                    <a href="{{ route('shop.products', array_filter(['warengruppe' => $wg->id, 'suche' => $search, 'brand' => $brandId, 'gebinde' => $gebindeId, 'sort' => $sort])) }}"
-                       class="block px-3 py-1.5 rounded-lg text-sm {{ $warengruppeId == $wg->id ? 'bg-amber-100 text-amber-700 font-medium' : 'text-gray-600 hover:bg-gray-100' }}">
-                        {{ $wg->name }}
-                        <span class="text-xs text-gray-400 ml-1">{{ $wg->products_count }}</span>
-                    </a>
-                    @endif
-                @endforeach
-            </nav>
-        </div>
-        @endif
+        {{-- Warengruppen filter (ausgeblendet) --}}
 
         {{-- Brand filter --}}
         @if($brands->isNotEmpty())
@@ -281,6 +243,7 @@ $viewLabels = [
                         <a href="{{ route('shop.product', $product) }}" class="text-xs font-medium text-gray-900 hover:text-amber-600 line-clamp-2 leading-snug flex-1">{!! $product->produktname_formatted !!}</a>
                         @include('shop._product-price', compact('price', 'pfand', 'priceDisplayMode', 'isBusiness', 'showPfand') + ['grundpreisText' => $product->grundpreis_text])
                         @include('shop._product-cart', compact('product', 'stockAvailable'))
+                        @include('shop._product-fav', compact('product', 'favoriteProductIds'))
                     </div>
                 </div>
             @endforeach
@@ -318,6 +281,7 @@ $viewLabels = [
                     </div>
                     <div class="shrink-0">
                         @include('shop._product-cart', compact('product', 'stockAvailable'))
+                        @include('shop._product-fav', compact('product', 'favoriteProductIds'))
                     </div>
                 </div>
             @endforeach
@@ -344,7 +308,7 @@ $viewLabels = [
                     <div class="shrink-0 text-right min-w-[90px]">
                         @if($price)
                             <p class="text-sm font-bold text-gray-900 whitespace-nowrap">{{ milli_to_eur($priceDisplayMode === 'netto' ? $price->netMilli : $price->grossMilli) }}</p>
-                            @if($showPfand && $pfand > 0)<p class="text-xs text-amber-600 whitespace-nowrap">+ {{ milli_to_eur($pfand) }} P</p>@endif
+                            @if($showPfand && $pfand > 0)<p class="text-xs text-amber-600 whitespace-nowrap">+ {{ milli_to_eur($pfand) }} Pfand</p>@endif
                             @if($product->grundpreis_text)<p class="text-xs text-gray-400 whitespace-nowrap">{{ $product->grundpreis_text }}</p>@endif
                         @else
                             <p class="text-xs text-gray-400 italic">Anfrage</p>
@@ -352,6 +316,7 @@ $viewLabels = [
                     </div>
                     <div class="shrink-0">
                         @include('shop._product-cart', compact('product', 'stockAvailable'))
+                        @include('shop._product-fav', compact('product', 'favoriteProductIds'))
                     </div>
                 </div>
             @endforeach
@@ -369,7 +334,7 @@ $viewLabels = [
                         <th class="text-left py-2 px-3 font-semibold">Produkt</th>
                         <th class="text-left py-2 px-3 font-semibold hidden md:table-cell">Marke</th>
                         <th class="text-right py-2 px-3 font-semibold">Preis</th>
-                        @if($showPfand)<th class="text-right py-2 px-3 font-semibold hidden sm:table-cell">Pfand</th>@endif
+                        @if($showPfand)<th class="text-right py-2 px-3 font-semibold">Pfand</th>@endif
                         <th class="text-right py-2 px-3 font-semibold">Menge</th>
                         <th class="py-2 px-3"></th>
                     </tr>
@@ -396,7 +361,7 @@ $viewLabels = [
                             @endif
                         </td>
                         @if($showPfand)
-                        <td class="py-2 px-3 text-right text-xs text-amber-600 whitespace-nowrap hidden sm:table-cell">
+                        <td class="py-2 px-3 text-right text-xs text-amber-600 whitespace-nowrap">
                             {{ $pfand > 0 ? milli_to_eur($pfand) : '—' }}
                         </td>
                         @endif
@@ -463,4 +428,9 @@ $viewLabels = [
         @endif {{-- /products isEmpty --}}
     </div>
 </div>
+
+<p class="text-xs text-gray-400 mt-4 text-center">
+    Alle Preise inkl. gesetzlicher MwSt. zzgl. Pfand. Lieferkonditionen sieh unter
+    <a href="{{ route('page.show', 'heimdienst') }}" class="underline hover:text-gray-600">Heimdienst</a>.
+</p>
 @endsection

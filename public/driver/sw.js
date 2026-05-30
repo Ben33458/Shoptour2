@@ -8,10 +8,10 @@
  *   - /api/driver/upload      → Network-only
  */
 
-const CACHE_NAME   = 'driver-app-v1';
+const CACHE_NAME   = 'driver-app-v3';
+// Only cache static assets — NOT the HTML shell, because it contains
+// server-rendered session state (isSessionAuth) and must be fetched fresh.
 const SHELL_ASSETS = [
-    '/driver',
-    '/driver/',
     '/driver/app.js',
     '/driver/manifest.json',
 ];
@@ -42,8 +42,8 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
 
-    // App shell: cache-first
-    if (url.pathname.startsWith('/driver') && !url.pathname.startsWith('/api/')) {
+    // Static assets (app.js, manifest.json): cache-first
+    if (url.pathname.startsWith('/driver/') && !url.pathname.startsWith('/api/')) {
         event.respondWith(cacheFirst(event.request));
         return;
     }

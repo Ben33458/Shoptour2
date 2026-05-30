@@ -182,6 +182,15 @@
         font-weight: 700;
     }
     </style>
+    <script>
+    /* Permanent-Edit-Modus: Redirect show → edit bevor Seite gerendert wird */
+    (function(){
+        if(localStorage.getItem('admin_perm_edit')!=='1') return;
+        var p = location.pathname;
+        /* Matcht /admin/irgendwas/123 (endet mit numerischer ID, kein weiterer Pfad) */
+        if(/\/admin\/[^\/]+\/\d+$/.test(p)) { location.replace(p+'/edit'); }
+    })();
+    </script>
     @stack('head')
 </head>
 <body>
@@ -254,8 +263,21 @@
     <span title="Zeit">{{ $now->format('H:i') }}</span>
     <span style="opacity:.4">·</span>
     <span title="Aktuelle Woche">{{ $weekStart }} – {{ $weekEnd }} KW {{ $kw }}</span>
+    <span style="margin-left:auto;pointer-events:auto">
+        <button id="perm-edit-btn"
+            title="Permanent-Bearbeiten-Modus: Show-Seiten werden automatisch zur Edit-Seite weitergeleitet"
+            onclick="togglePermEdit()"
+            type="button"
+            style="display:flex;align-items:center;gap:5px;background:none;border:1px solid var(--c-border,#e2e8f0);border-radius:20px;padding:2px 8px;cursor:pointer;color:var(--c-muted,#9ca3af);font-size:.68rem;font-family:monospace;transition:border-color .2s,color .2s;white-space:nowrap">
+            ✏️ Permanent bearbeiten
+            <span id="perm-edit-track" style="display:inline-block;width:24px;height:14px;background:var(--c-border,#e2e8f0);border-radius:7px;position:relative;transition:background .2s;flex-shrink:0">
+                <span id="perm-edit-thumb" style="display:block;width:10px;height:10px;background:#fff;border-radius:50%;position:absolute;top:2px;left:2px;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+            </span>
+        </button>
+    </span>
 </div>
 
+<script src="{{ asset('admin/admin-table.js') }}?v={{ filemtime(public_path('admin/admin-table.js')) }}"></script>
 @stack('scripts')
 <script src="{{ asset('admin/table-enhance.js') }}?v={{ filemtime(public_path('admin/table-enhance.js')) }}" defer></script>
 <script>
@@ -284,6 +306,34 @@ document.addEventListener('keydown', function (e) {
     e.preventDefault();
     next.focus();
 });
+
+/* ── Permanent-Edit-Modus ── */
+(function(){
+    var on = localStorage.getItem('admin_perm_edit')==='1';
+    function applyState(active){
+        var btn   = document.getElementById('perm-edit-btn');
+        var track = document.getElementById('perm-edit-track');
+        var thumb = document.getElementById('perm-edit-thumb');
+        if(!btn) return;
+        if(active){
+            track.style.background = 'var(--c-primary,#3b82f6)';
+            thumb.style.transform  = 'translateX(12px)';
+            btn.style.color        = 'var(--c-primary,#3b82f6)';
+            btn.style.borderColor  = 'var(--c-primary,#3b82f6)';
+        } else {
+            track.style.background = '';
+            thumb.style.transform  = '';
+            btn.style.color        = '';
+            btn.style.borderColor  = '';
+        }
+    }
+    applyState(on);
+    window.togglePermEdit = function(){
+        on = !on;
+        localStorage.setItem('admin_perm_edit', on ? '1' : '0');
+        applyState(on);
+    };
+})();
 
 function toggleDarkMode() {
     const html = document.documentElement;

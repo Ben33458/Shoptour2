@@ -47,6 +47,14 @@ return [
         'sync_token' => env('WAWI_SYNC_TOKEN', 'changeme'),
     ],
 
+    'stripe' => [
+        'enabled'        => env('STRIPE_ENABLED', false),
+        'secret_key'     => env('STRIPE_SECRET_KEY', ''),
+        'public_key'     => env('STRIPE_PUBLIC_KEY', ''),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET', ''),
+        'currency'       => env('STRIPE_CURRENCY', 'eur'),
+    ],
+
     'getraenkedb' => [
         'url' => env('GETRAENKEDB_API_URL', 'http://89.167.121.25:8800/api/v1'),
         'key' => env('GETRAENKEDB_API_KEY', ''),
@@ -61,6 +69,21 @@ return [
         'db_id_alt'  => env('NINOX_DB_ID_ALT', 'fadrrq8poh9b'),
         // Rückwärtskompatibilität
         'db_id'      => env('NINOX_DB_ID', 'tpwd0lln7f65'),
+        // Tabellen-IDs (aus Ninox API: K=Kunden, I=Mitarbeiter, S=Bestellannahme, Z=Marktbestand)
+        'tables' => [
+            'kunden'           => env('NINOX_TABLE_KUNDEN', 'K'),
+            'mitarbeiter'      => env('NINOX_TABLE_MITARBEITER', 'I'),
+            'bestellannahme'   => env('NINOX_TABLE_BESTELLANNAHME', 'S'),
+            'marktbestand'     => env('NINOX_TABLE_MARKTBESTAND', 'Z'),
+            'liefer_tour'      => env('NINOX_TABLE_LIEFER_TOUR', 'T'),
+            'warenkorb_artikel'=> env('NINOX_TABLE_WARENKORB', 'EB'),
+            'bestellung'       => env('NINOX_TABLE_BESTELLUNG', ''),  // Lieferanten-Bestellung (Untertabelle)
+        ],
+    ],
+
+    'immich' => [
+        'url'     => env('IMMICH_URL', ''),
+        'api_key' => env('IMMICH_API_KEY', ''),
     ],
 
     'gmail' => [

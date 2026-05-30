@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Procurement;
 
+use App\Models\DocScanUpload;
 use App\Models\Inventory\Warehouse;
 use App\Models\Supplier\PurchaseOrder;
 use App\Models\Supplier\Supplier;
@@ -30,6 +31,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int         $supplier_id
  * @property int         $warehouse_id
  * @property int|null    $document_id
+ * @property int|null    $docscan_upload_id
  * @property string|null $lieferschein_nr
  * @property string      $status
  * @property string      $kontrollstufe
@@ -41,6 +43,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property float|null  $paletten_anzahl_erwartet
  * @property float|null  $paletten_anzahl_geliefert
  * @property string|null $notiz
+ * @property string|null $ninox_bestellung_id
+ * @property \Carbon\Carbon|null $ninox_pushed_at
  */
 class GoodsReceipt extends Model
 {
@@ -58,18 +62,22 @@ class GoodsReceipt extends Model
     protected $fillable = [
         'company_id',
         'purchase_order_id', 'supplier_id', 'warehouse_id', 'document_id',
+        'docscan_upload_id',
         'lieferschein_nr',
         'status', 'kontrollstufe',
         'arrived_at', 'kontrolle_beginn_at', 'gebucht_at',
         'gebucht_by_user_id', 'gebucht_by_employee_id',
         'paletten_anzahl_erwartet', 'paletten_anzahl_geliefert',
         'notiz',
+        'ninox_bestellung_id',
+        'ninox_pushed_at',
     ];
 
     protected $casts = [
         'arrived_at'          => 'datetime',
         'kontrolle_beginn_at' => 'datetime',
         'gebucht_at'          => 'datetime',
+        'ninox_pushed_at'     => 'datetime',
     ];
 
     public function purchaseOrder(): BelongsTo
@@ -90,6 +98,11 @@ class GoodsReceipt extends Model
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
+    }
+
+    public function docScanUpload(): BelongsTo
+    {
+        return $this->belongsTo(DocScanUpload::class, 'docscan_upload_id');
     }
 
     /** @return HasMany<GoodsReceiptItem> */

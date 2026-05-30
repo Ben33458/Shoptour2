@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Models\Driver\DriverApiToken;
+use App\Models\Employee\Employee;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -23,26 +25,44 @@ class DriverAuth
     {
         $header = $request->header('Authorization', '');
 
-        if (! str_starts_with((string) $header, 'Bearer ')) {
-            return response()->json(['error' => 'Missing Authorization header.'], 401);
+        if (str_starts_with((string) $header, 'Bearer ')) {
+            // Bearer token path (PWA offline tokens)
+            $plainToken = substr((string) $header, 7);
+
+            if ($plainToken === '') {
+                return response()->json(['error' => 'Empty bearer token.'], 401);
+            }
+
+            $tokenRecord = DriverApiToken::findByPlainToken($plainToken);
+
+            if ($tokenRecord === null) {
+                return response()->json(['error' => 'Invalid or inactive token.'], 401);
+            }
+
+            $request->attributes->set('driver_employee_id', $tokenRecord->employee_id);
+            $request->attributes->set('driver_token_id',    $tokenRecord->id);
+
+            return $next($request);
         }
 
-        $plainToken = substr((string) $header, 7);
-
-        if ($plainToken === '') {
-            return response()->json(['error' => 'Empty bearer token.'], 401);
+        // Session auth path — check Laravel web guard (email/password login)
+        $user = Auth::guard('web')->user();
+        if ($user !== null) {
+            if (! $user->hasAdminAccess()) {
+                return response()->json(['error' => 'Forbidden.'], 403);
+            }
+            $employee = Employee::where('user_id', $user->id)->first();
+            $request->attributes->set('driver_employee_id', $employee?->id);
+            return $next($request);
         }
 
-        $tokenRecord = DriverApiToken::findByPlainToken($plainToken);
-
-        if ($tokenRecord === null) {
-            return response()->json(['error' => 'Invalid or inactive token.'], 401);
+        // PIN session path (employee logged in via /mein timeclock)
+        $employeeId = $request->session()->get('employee_id');
+        if ($employeeId) {
+            $request->attributes->set('driver_employee_id', (int) $employeeId);
+            return $next($request);
         }
 
-        // Make employee_id available to controllers via request attribute
-        $request->attributes->set('driver_employee_id', $tokenRecord->employee_id);
-        $request->attributes->set('driver_token_id',    $tokenRecord->id);
-
-        return $next($request);
+        return response()->json(['error' => 'Unauthenticated.'], 401);
     }
 }

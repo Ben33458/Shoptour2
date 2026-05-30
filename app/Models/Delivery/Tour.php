@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Delivery;
 
+use App\Models\Employee\Employee;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,6 +51,8 @@ class Tour extends Model
         'status',
         'started_at',
         'ended_at',
+        'ninox_id',
+        'name',
     ];
 
     /**
@@ -64,6 +67,11 @@ class Tour extends Model
     // -------------------------------------------------------------------------
     // Relationships
     // -------------------------------------------------------------------------
+
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'driver_employee_id');
+    }
 
     /**
      * The recurring template this tour was generated from.

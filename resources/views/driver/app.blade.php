@@ -100,6 +100,10 @@
         /* ---------- Stop card extras ---------- */
         .stop-address       { font-size: .8rem; color: #4b5563; margin-bottom: 3px; }
         .stop-delivery-note { font-size: .8rem; color: #92400e; margin-bottom: 6px; }
+        .order-notes        { font-size: .85rem; color: #1e40af; background: #eff6ff;
+                              border-left: 3px solid #3b82f6; padding: 6px 10px;
+                              border-radius: 0 6px 6px 0; margin-bottom: 6px;
+                              white-space: pre-wrap; word-break: break-word; }
         .stop-time          { font-size: .75rem; color: #9ca3af; margin-left: 6px; }
 
         /* ---------- Items list ---------- */
@@ -328,6 +332,51 @@
         .rej-type   { font-weight: 600; color: #374151; }
         .rej-id     { color: #9ca3af; font-size: .72rem; font-family: monospace; margin-top: 1px; }
         .rej-reason { color: #dc2626; margin-top: 2px; }
+
+        /* ---------- Payment summary & open balance ---------- */
+        .open-balance-badge {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 6px;
+            padding: 5px 10px;
+            font-size: .8rem;
+            color: #9a3412;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .payment-summary {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+            font-size: .8rem;
+        }
+        .pay-cash { background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        .pay-ec   { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+
+        /* ---------- Tour-Abschluss / Leergut / Payment modals ---------- */
+        .abschluss-stop {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: .85rem;
+            padding: 4px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .abschluss-stop:last-child { border-bottom: none; }
+        .kasse-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            cursor: pointer;
+            font-size: .9rem;
+        }
+        .kasse-option:has(input:checked) { border-color: #1a56db; background: #eff6ff; }
     </style>
 </head>
 <body>
@@ -392,7 +441,8 @@
 <script>
 window.__DRIVER_CONFIG__ = {
     apiBase: '/api/driver',
-    token: null, // Set after login (stored in localStorage)
+    token: null,
+    isSessionAuth: {{ (Auth::check() || session()->has('employee_id')) ? 'true' : 'false' }},
 };
 </script>
 <style>
@@ -431,6 +481,9 @@ window.__DRIVER_CONFIG__ = {
 
 <script>
 (function () {
+  // Session-auth users (Mitarbeiter) need no token — skip overlay entirely.
+  if (window.__DRIVER_CONFIG__?.isSessionAuth) return;
+
   const STORAGE_KEY = 'driver_api_token_plain';
 
   const overlay = document.getElementById('driver-auth-overlay');

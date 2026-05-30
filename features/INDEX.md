@@ -52,5 +52,8 @@
 <!-- Add features above this line -->
 
 | PROJ-37 | Bestellungen, Warenanlieferung und MHD-Management | In Progress | [PROJ-37-bestellungen-warenanlieferung-mhd.md](PROJ-37-bestellungen-warenanlieferung-mhd.md) | 2026-04-13 |
+| PROJ-38 | Veranstaltungen & Angebote (MVP: EventSeries, EventOccurrence, Angebotsversionierung, Ninox-Import, JTL-Discovery) | In Progress | [PROJ-38-veranstaltungen-angebote.md](PROJ-38-veranstaltungen-angebote.md) | 2026-05-16 |
+| PROJ-39 | Kassenbericht / UST-Voranmeldung (LS POS / JTL WAWI, MwSt-Aufschlüsselung, PDF) | In Progress | [PROJ-39-kassenbericht.md](PROJ-39-kassenbericht.md) | 2026-05-21 |
+| PROJ-40 | Wissensassistent (RAG-Chat, Paperless+BookStack-Indexierung, Qdrant, Nightly Sync) | In Progress | [PROJ-40-wissensassistent.md](PROJ-40-wissensassistent.md) | 2026-05-28 |
 
-## Next Available ID: PROJ-38
+## Next Available ID: PROJ-41

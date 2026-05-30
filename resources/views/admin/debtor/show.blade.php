@@ -5,6 +5,7 @@
 @section('actions')
     <a href="{{ route('admin.debtor.index') }}" class="btn btn-outline btn-sm">← Übersicht</a>
     <a href="{{ route('admin.customers.show', $customer) }}" class="btn btn-outline btn-sm">Kundenkonto</a>
+    <a href="{{ route('admin.customers.edit', $customer) }}" class="btn btn-outline btn-sm">✏ Bearbeiten</a>
 @endsection
 
 @section('content')
@@ -231,6 +232,11 @@
                         @if($blocked['hold'])
                             <li>Kunde ist auf <strong>Hold</strong> gesetzt</li>
                         @endif
+                        @if(!empty($blocked['no_email']))
+                            <li style="color:#dc2626"><strong>Keine E-Mail-Adresse</strong> hinterlegt — Versand nicht möglich.
+                                <a href="{{ route('admin.customers.show', $customer) }}" style="color:#dc2626">Kundenkonto öffnen →</a>
+                            </li>
+                        @endif
                         @foreach($blocked['blocking_notes'] as $note)
                             <li><strong>{{ $note['type'] }}</strong>: {{ Str::limit($note['body'], 60) }}</li>
                         @endforeach
@@ -254,9 +260,15 @@
                                 <input type="checkbox" name="copy_to_me" value="1">
                                 Kopie an mich ({{ auth()->user()->email }})
                             </label>
-                            <button type="submit" class="btn btn-sm" style="background:#f59e0b;color:#fff;border:none;white-space:nowrap">
-                                Trotzdem senden
-                            </button>
+                            <div style="display:flex;gap:6px;width:100%">
+                                <a href="{{ route('admin.dunning.send_quick.preview', [$customer, 'force' => 1]) }}"
+                                   class="btn btn-sm" style="flex:1;text-align:center;background:#fef3c7;color:#92400e;border:1px solid #f59e0b">
+                                    Vorschau
+                                </a>
+                                <button type="submit" class="btn btn-sm" style="flex:1;background:#f59e0b;color:#fff;border:none;white-space:nowrap">
+                                    Trotzdem senden
+                                </button>
+                            </div>
                         </form>
                     @else
                         <p style="font-size:.82rem;color:var(--c-muted);margin:0">Kein Mahnversand möglich — keine offenen Rechnungen.</p>
@@ -269,9 +281,15 @@
                         <input type="checkbox" name="copy_to_me" value="1">
                         Kopie an mich ({{ auth()->user()->email }})
                     </label>
-                    <button type="submit" class="btn btn-primary btn-sm" style="width:100%">
-                        Mahnung senden
-                    </button>
+                    <div style="display:flex;gap:6px">
+                        <a href="{{ route('admin.dunning.send_quick.preview', $customer) }}"
+                           class="btn btn-outline btn-sm" style="flex:1;text-align:center">
+                            Vorschau
+                        </a>
+                        <button type="submit" class="btn btn-primary btn-sm" style="flex:1">
+                            Mahnung senden
+                        </button>
+                    </div>
                 </form>
                 <form method="POST" action="{{ route('admin.debtor.account_statement', $customer) }}" style="margin-top:8px">
                     @csrf
@@ -279,9 +297,15 @@
                         <input type="checkbox" name="copy_to_me" value="1">
                         Auch an mich ({{ auth()->user()->email }})
                     </label>
-                    <button type="submit" class="btn btn-outline btn-sm" style="width:100%">
-                        Kontoübersicht senden
-                    </button>
+                    <div style="display:flex;gap:6px">
+                        <a href="{{ route('admin.debtor.account_statement.preview', $customer) }}"
+                           class="btn btn-outline btn-sm" style="flex:1;text-align:center">
+                            Vorschau
+                        </a>
+                        <button type="submit" class="btn btn-outline btn-sm" style="flex:1">
+                            Kontoübersicht senden
+                        </button>
+                    </div>
                 </form>
             @else
                 <p style="font-size:.85rem;color:var(--c-muted);margin:0">Keine offenen Rechnungen — kein Mahnversand möglich.</p>

@@ -268,6 +268,23 @@ class ShopController extends Controller
                 ->exists();
         }
 
+        $categoryQuery = fn() => Product::where('category_id', $product->category_id)
+            ->where('active', true)
+            ->where('show_in_shop', true)
+            ->where('availability_mode', '!=', Product::AVAILABILITY_DISCONTINUED);
+
+        $prevProduct = $categoryQuery()
+            ->where('produktname', '<', $product->produktname)
+            ->orderByDesc('produktname')
+            ->select(['id', 'slug', 'produktname'])
+            ->first();
+
+        $nextProduct = $categoryQuery()
+            ->where('produktname', '>', $product->produktname)
+            ->orderBy('produktname')
+            ->select(['id', 'slug', 'produktname'])
+            ->first();
+
         return view('shop.product', compact(
             'product',
             'price',
@@ -278,6 +295,8 @@ class ShopController extends Controller
             'schemaOrg',
             'stockAvailable',
             'isFavorite',
+            'prevProduct',
+            'nextProduct',
         ));
     }
 

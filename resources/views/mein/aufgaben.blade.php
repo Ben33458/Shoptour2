@@ -76,6 +76,34 @@ textarea:focus, input[type=text]:focus { outline:2px solid var(--c-primary);outl
                        border:1px solid var(--c-primary);background:var(--c-primary);color:#fff;">
             + Neue Aufgabe
         </button>
+        <button onclick="showTaskSummary()"
+                style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;
+                       border:1px solid var(--c-border);background:transparent;color:var(--c-text);">
+            ✓ Mein heutiger Stand
+        </button>
+    </div>
+</div>
+
+{{-- Task summary modal --}}
+<div id="summary-overlay" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+    <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;width:min(500px,95vw);max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.25);">
+        <div style="padding:16px 20px;border-bottom:1px solid var(--c-border);display:flex;align-items:center;justify-content:space-between;">
+            <span style="font-size:15px;font-weight:700;">Mein heutiger Stand</span>
+            <button onclick="document.getElementById('summary-overlay').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--c-muted);">✕</button>
+        </div>
+        <div id="summary-body" style="padding:20px;">
+            <div style="text-align:center;color:var(--c-muted);padding:2rem;">Wird geladen…</div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid var(--c-border);display:flex;justify-content:flex-end;gap:.5rem;">
+            <button onclick="copySummary()" id="copy-btn"
+                    style="padding:.4rem 1rem;border:1px solid var(--c-border);border-radius:6px;background:transparent;cursor:pointer;font-size:.85rem;">
+                📋 Kopieren
+            </button>
+            <button onclick="document.getElementById('summary-overlay').style.display='none'"
+                    style="padding:.4rem 1rem;border:1px solid var(--c-border);border-radius:6px;background:transparent;cursor:pointer;font-size:.85rem;">
+                Schließen
+            </button>
+        </div>
     </div>
 </div>
 
@@ -375,7 +403,81 @@ function toggleHistory(id) {
     const el = document.getElementById(id);
     el.style.display = (el.style.display === '' || el.style.display === 'none') ? 'table-row' : 'none';
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); document.getElementById('summary-overlay').style.display='none'; } });
+
+const summaryUrl = '{{ route('mein.aufgaben.zusammenfassung') }}';
+let summaryData = null;
+
+function showTaskSummary() {
+    const overlay = document.getElementById('summary-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('summary-body').innerHTML = '<div style="text-align:center;color:var(--c-muted);padding:2rem;">Wird geladen…</div>';
+    fetch(summaryUrl)
+        .then(r => r.json())
+        .then(data => {
+            summaryData = data;
+            renderSummary(data);
+        })
+        .catch(() => {
+            document.getElementById('summary-body').innerHTML = '<div style="color:#dc2626;padding:1rem;">Fehler beim Laden.</div>';
+        });
+}
+
+function renderSummary(data) {
+    const total = data.recurring.length + data.admin.length;
+    let html = `<div style="font-size:.85rem;color:var(--c-muted);margin-bottom:1rem;">${data.date} · ${data.employee}</div>`;
+
+    if (total === 0) {
+        html += '<div style="color:var(--c-muted);text-align:center;padding:1.5rem;">Heute noch keine Aufgaben als erledigt markiert.</div>';
+    } else {
+        if (data.recurring.length > 0) {
+            html += `<div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem;">Wiederkehrende Aufgaben (${data.recurring.length})</div>`;
+            html += '<ul style="margin:0 0 1rem 1rem;padding:0;font-size:.9rem;">';
+            data.recurring.forEach(t => {
+                html += `<li style="margin-bottom:.3rem;">✓ ${escHtml(t.name)} <span style="color:var(--c-muted);font-size:.8rem;">— ${t.completed_at} Uhr</span>`;
+                if (t.note) html += `<br><span style="color:var(--c-muted);font-size:.8rem;margin-left:.5rem;">${escHtml(t.note)}</span>`;
+                html += '</li>';
+            });
+            html += '</ul>';
+        }
+        if (data.admin.length > 0) {
+            html += `<div style="font-weight:700;font-size:.9rem;margin-bottom:.5rem;">Sonstige Aufgaben (${data.admin.length})</div>`;
+            html += '<ul style="margin:0 0 1rem 1rem;padding:0;font-size:.9rem;">';
+            data.admin.forEach(t => {
+                html += `<li style="margin-bottom:.3rem;">✓ ${escHtml(t.name)} <span style="color:var(--c-muted);font-size:.8rem;">— ${t.completed_at} Uhr</span></li>`;
+            });
+            html += '</ul>';
+        }
+    }
+    document.getElementById('summary-body').innerHTML = html;
+}
+
+function copySummary() {
+    if (!summaryData) return;
+    const total = summaryData.recurring.length + summaryData.admin.length;
+    let text = `✅ Aufgaben heute erledigt — ${summaryData.date}\n👤 ${summaryData.employee}\n\n`;
+    if (total === 0) {
+        text += 'Noch keine Aufgaben erledigt.';
+    } else {
+        if (summaryData.recurring.length > 0) {
+            text += `Wiederkehrende Aufgaben:\n`;
+            summaryData.recurring.forEach(t => { text += `  ✓ ${t.name} (${t.completed_at})\n`; });
+        }
+        if (summaryData.admin.length > 0) {
+            text += `\nSonstige Aufgaben:\n`;
+            summaryData.admin.forEach(t => { text += `  ✓ ${t.name} (${t.completed_at})\n`; });
+        }
+    }
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = '✓ Kopiert!';
+        setTimeout(() => btn.textContent = '📋 Kopieren', 2000);
+    });
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
 @endpush
 @endsection

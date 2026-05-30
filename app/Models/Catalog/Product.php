@@ -126,6 +126,7 @@ class Product extends Model
         'is_base_item',
         'base_item_product_id',
         'ninox_artikel_id',
+        'ninox_pushed_at',
         'wawi_artikel_id',
         'volume_ml',
         'gebinde_units',
@@ -146,6 +147,7 @@ class Product extends Model
         'preorder_lead_days'     => 'integer',
         'tax_rate_id'            => 'integer',
         'base_item_product_id'   => 'integer',
+        'ninox_pushed_at'        => 'datetime',
     ];
 
     // =========================================================================
@@ -427,6 +429,11 @@ class Product extends Model
     public function mainImage(): HasOne
     {
         return $this->hasOne(ProductImage::class)->orderBy('sort_order');
+    }
+
+    public function leergut(): HasOne
+    {
+        return $this->hasOne(ProductLeergut::class);
     }
 
     // =========================================================================

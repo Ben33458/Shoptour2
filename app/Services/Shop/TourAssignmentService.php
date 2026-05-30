@@ -6,7 +6,9 @@ namespace App\Services\Shop;
 
 use App\Models\Delivery\DeliveryArea;
 use App\Models\Delivery\RegularDeliveryTour;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -84,6 +86,7 @@ class TourAssignmentService
         $result = $tours->values();
 
         // BUG-7 fix: log when no tour covers the postal code — helps admin
+
         // identify gaps in the delivery area configuration (PROJ-14).
         if ($result->isEmpty()) {
             Log::info('TourAssignment: no delivery tour found for postal code', [
@@ -94,5 +97,28 @@ class TourAssignmentService
         }
 
         return $result;
+    }
+
+    /**
+     * Return the next scheduled tour date for a regular delivery tour.
+     *
+     * Looks up ninox_liefer_tour for the earliest upcoming entry with
+     * status "NEU und offen". Returns null if no date is available
+     * (tour has no ninox_id, or no future runs planned).
+     */
+    public function nextTourDate(RegularDeliveryTour $tour): ?Carbon
+    {
+        if ($tour->ninox_id === null) {
+            return null;
+        }
+
+        $row = DB::table('ninox_liefer_tour')
+            ->where('regelmaessige_touren', $tour->ninox_id)
+            ->where('datum', '>=', today()->toDateString())
+            ->where('status', 'NEU und offen')
+            ->orderBy('datum')
+            ->first(['datum']);
+
+        return $row ? Carbon::parse($row->datum) : null;
     }
 }

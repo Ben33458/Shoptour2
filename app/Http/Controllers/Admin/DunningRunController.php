@@ -132,6 +132,51 @@ class DunningRunController extends Controller
     }
 
     /**
+     * GET /admin/debitoren/{customer}/mahnung/vorschau
+     * Preview the dunning email without sending it.
+     */
+    public function previewQuick(Request $request, Customer $customer): RedirectResponse|\Illuminate\View\View
+    {
+        $force    = $request->boolean('force');
+        $proposal = $force
+            ? $this->dunningService->buildForcedProposal($customer)
+            : $this->dunningService->buildProposalForCustomer($customer);
+
+        if (! $proposal) {
+            return redirect()->route('admin.debtor.show', $customer)
+                ->with('error', 'Keine mahnfähigen Rechnungen vorhanden — Vorschau nicht möglich.');
+        }
+
+        $item = new DunningRunItem([
+            'dunning_run_id'     => 0,
+            'customer_id'        => $customer->id,
+            'dunning_level'      => $proposal['proposed_level'],
+            'channel'            => $proposal['channel'],
+            'recipient_email'    => $proposal['recipient_email'],
+            'total_open_milli'   => $proposal['open_total_milli'],
+            'interest_milli'     => $proposal['interest_milli'],
+            'flat_fee_milli'     => $proposal['flat_fee_milli'],
+            'interest_breakdown' => $proposal['interest_breakdown'],
+            'voucher_ids'        => $proposal['vouchers']->pluck('id')->toArray(),
+            'status'             => DunningRunItem::STATUS_PENDING,
+        ]);
+        $item->setRelation('customer', $customer);
+
+        $html = (new \App\Mail\DunningLevel1Mail($item))->render();
+
+        return view('admin.debtor.email_preview', [
+            'title'       => 'Vorschau: Mahnung Stufe ' . $proposal['proposed_level'] . ' – ' . $customer->displayName(),
+            'subject'     => 'Zahlungserinnerung – Offene Rechnungen [' . $customer->customer_number . ']',
+            'recipient'   => $proposal['recipient_email'] ?? '—',
+            'html'        => $html,
+            'send_route'  => route('admin.dunning.send_quick', $customer),
+            'send_label'  => 'Mahnung Stufe ' . $proposal['proposed_level'] . ' jetzt senden',
+            'send_params' => $force ? ['force' => '1'] : [],
+            'back_route'  => route('admin.debtor.show', $customer),
+        ]);
+    }
+
+    /**
      * POST /admin/debitoren/{customer}/mahnung
      * Create and immediately execute a single-customer dunning run.
      */

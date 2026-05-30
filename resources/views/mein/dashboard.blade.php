@@ -137,6 +137,7 @@
 <div class="mein-card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <div class="mein-card-title" style="margin:0;">Schichtbericht</div>
+        <a href="{{ route('mein.schichtberichte') }}" style="font-size:.8rem; color:var(--c-muted); text-decoration:none; margin-right:.5rem;">Alle Berichte →</a>
         @if($shiftReport?->is_submitted)
             <span style="padding:.2rem .7rem;border-radius:6px;background:#14532d;color:#4ade80;font-size:.8rem;font-weight:700;">
                 Abgeschlossen ✓
@@ -307,9 +308,23 @@
     @endif
 </div>
 
+{{-- Fehlende Produkte --}}
+<div class="mein-card" style="margin-bottom:1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="mein-card-title" style="margin:0;">Produkt fehlt im Lager?</div>
+        <a href="{{ route('mein.fehlende-produkte') }}" class="btn btn-outline" style="font-size:.85rem; padding:.35rem .9rem;">+ Jetzt melden</a>
+    </div>
+    <div style="font-size:.85rem; color:var(--c-muted); margin-top:.4rem;">
+        Fehlende Produkte direkt an den Admin melden — mit Verknüpfung zum Artikel.
+    </div>
+</div>
+
 {{-- Feedback / Fehler melden --}}
 <div class="mein-card">
-    <div class="mein-card-title">Feedback / Fehler melden</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div class="mein-card-title" style="margin:0;">Feedback / Fehler melden</div>
+        <a href="{{ route('mein.feedback.index') }}" style="font-size:.8rem; color:var(--c-muted); text-decoration:none;">Mein Verlauf →</a>
+    </div>
 
     <div id="feedback-success" style="display:none;background:#14532d;color:#4ade80;border-radius:8px;padding:12px 16px;font-size:.9rem;font-weight:600;margin-bottom:12px;">
         ✓ Danke! Dein Feedback wurde übermittelt.

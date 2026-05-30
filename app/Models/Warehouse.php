@@ -34,6 +34,11 @@ class Warehouse extends Model
 
     // ── Relations ──────────────────────────────────────────────────────────────
 
+    public function openingHours(): HasMany
+    {
+        return $this->hasMany(WarehouseOpeningHour::class)->orderBy('day_of_week');
+    }
+
     public function stocks(): HasMany
     {
         return $this->hasMany(ProductStock::class);

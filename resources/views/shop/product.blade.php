@@ -31,6 +31,42 @@
         <span class="text-gray-600">{{ $product->produktname }}</span>
     </nav>
 
+    {{-- Kategorie-Navigation --}}
+    @if($prevProduct || $nextProduct)
+    <div class="flex justify-between items-center mb-6 text-sm">
+        <div class="flex-1">
+            @if($prevProduct)
+            <a href="{{ route('shop.product', $prevProduct) }}"
+               class="inline-flex items-center gap-1.5 text-gray-400 hover:text-amber-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+                </svg>
+                <span class="hidden sm:inline truncate max-w-[200px]">{{ $prevProduct->produktname }}</span>
+                <span class="sm:hidden">Zurück</span>
+            </a>
+            @endif
+        </div>
+        @if($product->category)
+        <a href="{{ route('shop.products', ['kategorie' => $product->category_id]) }}"
+           class="text-gray-400 hover:text-amber-600 transition-colors text-center px-4">
+            Alle {{ $product->category->name }}
+        </a>
+        @endif
+        <div class="flex-1 text-right">
+            @if($nextProduct)
+            <a href="{{ route('shop.product', $nextProduct) }}"
+               class="inline-flex items-center gap-1.5 text-gray-400 hover:text-amber-600 transition-colors">
+                <span class="hidden sm:inline truncate max-w-[200px]">{{ $nextProduct->produktname }}</span>
+                <span class="sm:hidden">Weiter</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                </svg>
+            </a>
+            @endif
+        </div>
+    </div>
+    @endif
+
     <div class="grid md:grid-cols-2 gap-10">
 
         {{-- === Image gallery ================================================ --}}
@@ -330,20 +366,37 @@
                     </div>
                 @endif
 
-                {{-- Producer / origin --}}
-                @if($lmiv->hersteller_name || $lmiv->herkunftsland)
-                    <div class="bg-white rounded-2xl border border-gray-100 p-5">
-                        <h3 class="font-semibold text-gray-700 mb-2">Hersteller & Herkunft</h3>
-                        @if($lmiv->hersteller_name)
-                            <p class="text-sm text-gray-600">{{ $lmiv->hersteller_name }}</p>
-                        @endif
-                        @if($lmiv->hersteller_anschrift)
-                            <p class="text-sm text-gray-500">{{ $lmiv->hersteller_anschrift }}</p>
-                        @endif
-                        @if($lmiv->herkunftsland)
-                            <p class="text-sm text-gray-500 mt-1">Herkunft: {{ $lmiv->herkunftsland }}</p>
-                        @endif
-                    </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Hersteller & Herkunft — unabhängig von LMIV --}}
+    @php
+        $herstellerName      = ($lmiv?->hersteller_name) ?: $product->brand?->name;
+        $herstellerAnschrift = $lmiv?->hersteller_anschrift ?: null;
+        if (!$herstellerAnschrift && $product->brand?->adresse) {
+            $plzOrt = trim(($product->brand->plz ?? '') . ' ' . ($product->brand->ort ?? ''));
+            $parts  = array_filter([
+                $product->brand->adresse,
+                $plzOrt ?: null,
+                ($product->brand->land && $product->brand->land !== 'Deutschland') ? $product->brand->land : null,
+            ]);
+            $herstellerAnschrift = implode(', ', $parts) ?: null;
+        }
+        $herkunft = $lmiv?->herkunftsland;
+    @endphp
+    @if($herstellerName || $herkunft)
+        <div class="mt-8 border-t border-gray-200 pt-8">
+            <div class="bg-white rounded-2xl border border-gray-100 p-5 max-w-md">
+                <h3 class="font-semibold text-gray-700 mb-2">Hersteller & Herkunft</h3>
+                @if($herstellerName)
+                    <p class="text-sm text-gray-600">{{ $herstellerName }}</p>
+                @endif
+                @if($herstellerAnschrift)
+                    <p class="text-sm text-gray-500">{{ $herstellerAnschrift }}</p>
+                @endif
+                @if($herkunft)
+                    <p class="text-sm text-gray-500 mt-1">Herkunft: {{ $herkunft }}</p>
                 @endif
             </div>
         </div>

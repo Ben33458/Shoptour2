@@ -224,6 +224,8 @@ class DriverSyncService
         match ($driverEvent->event_type) {
             DriverEvent::TYPE_ARRIVED              => $this->handleArrived($driverEvent),
             DriverEvent::TYPE_FINISHED             => $this->handleFinished($driverEvent),
+            DriverEvent::TYPE_UNDO_ARRIVED         => $this->handleUndoArrived($driverEvent),
+            DriverEvent::TYPE_UNDO_FINISHED        => $this->handleUndoFinished($driverEvent),
             DriverEvent::TYPE_ITEM_DELIVERED       => $this->handleItemDelivered($driverEvent),
             DriverEvent::TYPE_ITEM_NOT_DELIVERED   => $this->handleItemNotDelivered($driverEvent),
             DriverEvent::TYPE_PAYMENT              => $this->handlePayment($driverEvent),
@@ -240,6 +242,7 @@ class DriverSyncService
             DriverEvent::TYPE_RENTAL_RETURN        => $this->handleRentalReturn($driverEvent),
             DriverEvent::TYPE_VOLLGUT_KASTEN       => $this->handleVollgutKasten($driverEvent),
             DriverEvent::TYPE_VOLLGUT_FASS         => $this->handleVollgutFass($driverEvent),
+            DriverEvent::TYPE_CASH_DEPOSIT         => $this->handleCashDeposit($driverEvent),
             default => throw new \InvalidArgumentException(
                 "Unknown event_type: '{$driverEvent->event_type}'."
             ),
@@ -260,6 +263,18 @@ class DriverSyncService
     {
         $stop = $this->requireTourStop($event);
         $this->fulfillmentService->markFinished($stop, $event->employee_id);
+    }
+
+    private function handleUndoArrived(DriverEvent $event): void
+    {
+        $stop = $this->requireTourStop($event);
+        $this->fulfillmentService->undoArrived($stop, $event->employee_id);
+    }
+
+    private function handleUndoFinished(DriverEvent $event): void
+    {
+        $stop = $this->requireTourStop($event);
+        $this->fulfillmentService->undoFinished($stop, $event->employee_id);
     }
 
     private function handleItemDelivered(DriverEvent $event): void
@@ -548,14 +563,21 @@ class DriverSyncService
      */
     private function handleLeergutausgleich(DriverEvent $event): void
     {
-        $orderId = (int) ($event->payload_json['order_id'] ?? $event->order_id ?? 0);
-        $items   = (array) ($event->payload_json['items'] ?? []);
+        $orderId     = (int) ($event->payload_json['order_id'] ?? $event->order_id ?? 0);
+        $items       = (array) ($event->payload_json['items'] ?? []);
+        $adjustOrder = (bool) ($event->payload_json['adjust_order'] ?? true);
 
         if ($orderId <= 0) {
             throw new \InvalidArgumentException('leergutausgleich: payload.order_id required.');
         }
         if (empty($items)) {
             throw new \InvalidArgumentException('leergutausgleich: payload.items must not be empty.');
+        }
+
+        // When adjust_order is false, we only log the event (quantities recorded via DriverEvent)
+        // but do not credit the customer with order items.
+        if (! $adjustOrder) {
+            return;
         }
 
         $order = Order::find($orderId);
@@ -585,6 +607,42 @@ class DriverSyncService
                 'tax_rate_percent'        => (int) ($item['tax_rate_percent'] ?? 19),
             ]);
         }
+    }
+
+    /**
+     * cash_deposit: driver deposits collected cash into a target cash register at tour end.
+     *
+     * payload:
+     *   cash_register_id  (int)    — target register (safe/register/bank)
+     *   amount_cents      (int)    — amount deposited in cents
+     *   note              (string, optional)
+     */
+    private function handleCashDeposit(DriverEvent $event): void
+    {
+        $registerId  = (int) ($event->payload_json['cash_register_id'] ?? 0);
+        $amountCents = (int) ($event->payload_json['amount_cents'] ?? 0);
+        $note        = (string) ($event->payload_json['note'] ?? '');
+
+        if ($registerId <= 0) {
+            throw new \InvalidArgumentException('cash_deposit: payload.cash_register_id required.');
+        }
+        if ($amountCents <= 0) {
+            throw new \InvalidArgumentException('cash_deposit: payload.amount_cents must be > 0.');
+        }
+
+        $register = CashRegister::find($registerId);
+        if (! $register) {
+            throw new \RuntimeException("CashRegister #{$registerId} not found.");
+        }
+
+        CashTransaction::create([
+            'cash_register_id' => $registerId,
+            'employee_id'      => $event->employee_id,
+            'tour_id'          => $event->tour_id,
+            'type'             => CashTransaction::TYPE_DEPOSIT,
+            'amount_cents'     => $amountCents,
+            'note'             => $note ?: 'Tour-Abschluss Einzahlung',
+        ]);
     }
 
     /**

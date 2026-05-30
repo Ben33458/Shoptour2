@@ -58,6 +58,9 @@ class DriverEvent extends Model
     public const TYPE_RENTAL_RETURN        = 'rental_return';
     public const TYPE_VOLLGUT_KASTEN       = 'vollgut_kasten';
     public const TYPE_VOLLGUT_FASS         = 'vollgut_fass';
+    public const TYPE_CASH_DEPOSIT         = 'cash_deposit';
+    public const TYPE_UNDO_ARRIVED         = 'undo_arrived';
+    public const TYPE_UNDO_FINISHED        = 'undo_finished';
 
     // apply_status values
     public const STATUS_PENDING  = 'pending';

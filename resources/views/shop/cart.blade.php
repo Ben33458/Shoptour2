@@ -5,17 +5,6 @@
 @section('content')
 <h1 class="text-2xl font-bold text-gray-900 mb-6">Warenkorb</h1>
 
-{{-- Flash messages --}}
-@if(session('warning'))
-    <div class="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-sm">
-        {{ session('warning') }}
-    </div>
-@endif
-@if(session('success'))
-    <div class="mb-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded-xl text-sm">
-        {{ session('success') }}
-    </div>
-@endif
 
 @if($isEmpty)
     <div class="text-center py-20 text-gray-400">
@@ -126,11 +115,19 @@
                         {{-- Qty + Remove --}}
                         <div class="flex flex-col items-end gap-2 shrink-0">
                             @if(!$unavailable)
-                                <form method="POST" action="{{ route('cart.update', $productId) }}" class="flex items-center gap-2">
+                                <form method="POST" action="{{ route('cart.update', $productId) }}"
+                                      id="cf{{ $productId }}" class="flex items-center gap-1">
                                     @csrf @method('PATCH')
-                                    <input type="number" name="qty" value="{{ $qty }}" min="0" max="999"
-                                           class="w-16 border border-gray-300 rounded-lg px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-                                    <button type="submit" class="text-xs text-gray-400 hover:text-amber-600 underline">Aktualisieren</button>
+                                    <button type="button"
+                                            class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold {{ $qty <= 1 ? 'opacity-40' : '' }}"
+                                            onclick="cartStep({{ $productId }}, -1)">−</button>
+                                    <input type="number" name="qty" id="cq{{ $productId }}" value="{{ $qty }}"
+                                           min="0" max="999"
+                                           class="w-12 border border-gray-300 rounded-lg px-1 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                           onchange="document.getElementById('cf{{ $productId }}').submit()">
+                                    <button type="button"
+                                            class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold"
+                                            onclick="cartStep({{ $productId }}, 1)">+</button>
                                 </form>
                             @endif
 
@@ -153,6 +150,117 @@
                 @endforeach
             @endif
 
+            {{-- ── Leergut-Rückgabe ── --}}
+            @php
+                $lgData = $allLeergutTypes->map(fn($t) => [
+                    'art_nr'    => $t->leergut_art_nr,
+                    'name'      => $t->leergut_name,
+                    'price'     => $t->unit_price_gross_milli,
+                    'qty'       => $leergutItems[$t->leergut_art_nr]['qty'] ?? 0,
+                    'is_kasten' => !str_contains($t->leergut_name, 'Flasche') || str_contains($t->leergut_name, 'Kasten'),
+                ])->values()->all();
+            @endphp
+            <div class="mt-4"
+                 x-data="leergutCart({{ json_encode($lgData) }}, '{{ csrf_token() }}')">
+                <div class="bg-amber-50 rounded-2xl border border-amber-200 p-4">
+                    <div class="flex items-start justify-between mb-3 gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-amber-800">Leergut-Rückgabe</h3>
+                            <p class="text-xs text-amber-600 mt-0.5">Gib an, welches Leergut du zurückgibst. Es wird direkt vom Betrag abgezogen.</p>
+                        </div>
+                        <form method="POST" action="{{ route('cart.leergut.ausgleich') }}">
+                            @csrf
+                            <button type="submit"
+                                    class="text-xs text-amber-700 border border-amber-300 bg-white hover:bg-amber-100 rounded-lg px-3 py-1.5 transition-colors whitespace-nowrap shrink-0">
+                                ⟳ Ausgleich
+                            </button>
+                        </form>
+                    </div>
+
+                    @if($allLeergutTypes->isEmpty())
+                        <p class="text-xs text-amber-600">Keine Leergut-Typen konfiguriert.</p>
+                    @else
+                        {{-- Kasten-Gruppe --}}
+                        <template x-if="kastens.length > 0">
+                            <div>
+                                <p class="text-xs font-semibold text-amber-700 uppercase tracking-wide mt-3 mb-1">Kasten</p>
+                                <div class="space-y-2">
+                                    <template x-for="type in kastens" :key="type.art_nr">
+                                        <div class="flex items-center gap-3">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-800" x-text="type.name"></p>
+                                                <p class="text-xs text-amber-600">−<span x-text="fmt(type.price)"></span> / Stk.</p>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <button @click="upd(type, type.qty - 1)"
+                                                        :class="type.qty <= 0 ? 'opacity-30' : ''"
+                                                        class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold">−</button>
+                                                <span class="w-8 text-center text-sm font-medium"
+                                                      :class="type.qty > 0 ? 'text-amber-700 font-bold' : 'text-gray-400'"
+                                                      x-text="type.qty"></span>
+                                                <button @click="upd(type, type.qty + 1)"
+                                                        class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold">+</button>
+                                            </div>
+                                            <div class="text-right shrink-0 w-20">
+                                                <template x-if="type.qty > 0">
+                                                    <p class="text-sm font-semibold text-amber-700">−<span x-text="fmt(type.price * type.qty)"></span></p>
+                                                </template>
+                                                <template x-if="type.qty <= 0">
+                                                    <p class="text-sm text-gray-300">—</p>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        {{-- Flaschen-Gruppe --}}
+                        <template x-if="flaschen.length > 0">
+                            <div>
+                                <p class="text-xs font-semibold text-amber-700 uppercase tracking-wide mt-3 mb-1">Flaschen</p>
+                                <div class="space-y-2">
+                                    <template x-for="type in flaschen" :key="type.art_nr">
+                                        <div class="flex items-center gap-3">
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm text-gray-800" x-text="type.name"></p>
+                                                <p class="text-xs text-amber-600">−<span x-text="fmt(type.price)"></span> / Stk.</p>
+                                            </div>
+                                            <div class="flex items-center gap-1">
+                                                <button @click="upd(type, type.qty - 1)"
+                                                        :class="type.qty <= 0 ? 'opacity-30' : ''"
+                                                        class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold">−</button>
+                                                <span class="w-8 text-center text-sm font-medium"
+                                                      :class="type.qty > 0 ? 'text-amber-700 font-bold' : 'text-gray-400'"
+                                                      x-text="type.qty"></span>
+                                                <button @click="upd(type, type.qty + 1)"
+                                                        class="w-7 h-7 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 text-sm font-bold">+</button>
+                                            </div>
+                                            <div class="text-right shrink-0 w-20">
+                                                <template x-if="type.qty > 0">
+                                                    <p class="text-sm font-semibold text-amber-700">−<span x-text="fmt(type.price * type.qty)"></span></p>
+                                                </template>
+                                                <template x-if="type.qty <= 0">
+                                                    <p class="text-sm text-gray-300">—</p>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        {{-- Gesamt --}}
+                        <template x-if="total > 0">
+                            <div class="mt-3 pt-2 border-t border-amber-200 flex justify-between text-sm font-semibold text-amber-800">
+                                <span>Leergut-Gutschrift gesamt</span>
+                                <span>−<span x-text="fmt(total)"></span></span>
+                            </div>
+                        </template>
+                    @endif
+                </div>
+            </div>
+
             {{-- Action bar --}}
             <div class="flex items-center justify-between pt-2">
                 <a href="{{ route('shop.index') }}" class="text-sm text-gray-400 hover:text-amber-600">
@@ -171,7 +279,8 @@
         </div>
 
         {{-- Order summary --}}
-        <div class="lg:col-span-1">
+        <div class="lg:col-span-1"
+             x-data="{ drinksTotal: {{ $drinksTotal }}, rentalTotal: {{ $rentalTotal }} }">
             <div class="bg-white rounded-2xl border border-gray-100 p-6 sticky top-24">
                 <h2 class="font-bold text-gray-900 mb-4">Bestellübersicht</h2>
 
@@ -188,7 +297,7 @@
                         </div>
                         @foreach($taxBreakdown as $tax)
                             <div class="flex justify-between text-gray-500 text-xs">
-                                <span>{{ number_format($tax['rate'], 0) }}% MwSt.</span>
+                                <span>{{ number_format($tax['rate'] * 100, 0) }}% MwSt.</span>
                                 <span>{{ milli_to_eur($tax['tax_milli']) }}</span>
                             </div>
                         @endforeach
@@ -208,9 +317,15 @@
                         </div>
                     @endif
 
+                    {{-- Leergut-Gutschrift --}}
+                    <div x-show="$store.leergut.total > 0" class="flex justify-between text-amber-700">
+                        <span>Leergut-Gutschrift</span>
+                        <span>−<span x-text="$store.leergut.fmt($store.leergut.total)"></span></span>
+                    </div>
+
                     <div class="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900">
                         <span>Gesamtbetrag</span>
-                        <span>{{ milli_to_eur($grandTotal) }}</span>
+                        <span x-text="$store.leergut.fmt(Math.max(0, drinksTotal + rentalTotal - $store.leergut.total))"></span>
                     </div>
                 </div>
 
@@ -271,3 +386,63 @@
     </div>
 @endif
 @endsection
+
+@push('scripts')
+<script>
+// ── Alpine store (shared between leergut component + sidebar) ──────────────
+document.addEventListener('alpine:init', () => {
+    Alpine.store('leergut', {
+        total: 0,
+        fmt(milli) {
+            return (Math.abs(milli) / 1e6).toLocaleString('de-DE', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            }) + ' €';
+        }
+    });
+});
+
+// ── Alpine component for leergut section ──────────────────────────────────
+window.leergutCart = function(types, csrf) {
+    return {
+        types,
+        csrf,
+
+        init() {
+            this.$watch('total', v => Alpine.store('leergut').total = v);
+            Alpine.store('leergut').total = this.total;
+        },
+
+        get kastens()  { return this.types.filter(t =>  t.is_kasten); },
+        get flaschen() { return this.types.filter(t => !t.is_kasten); },
+
+        get total() {
+            return this.types.reduce((s, t) => s + t.price * t.qty, 0);
+        },
+
+        fmt(milli) {
+            return (Math.abs(milli) / 1e6).toLocaleString('de-DE', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2
+            }) + ' €';
+        },
+
+        upd(type, qty) {
+            qty = Math.max(0, qty);
+            type.qty = qty;
+            fetch('{{ route("cart.leergut.update") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ _token: this.csrf, art_nr: type.art_nr, qty })
+            });
+        }
+    };
+};
+
+// ── Drinks cart: +/- auto-submit ──────────────────────────────────────────
+window.cartStep = function(id, delta) {
+    const inp = document.getElementById('cq' + id);
+    const nv  = Math.max(0, parseInt(inp.value || '0') + delta);
+    inp.value = nv;
+    document.getElementById('cf' + id).submit();
+};
+</script>
+@endpush

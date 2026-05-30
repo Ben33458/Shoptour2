@@ -208,6 +208,37 @@ class DebtorController extends Controller
     }
 
     /**
+     * GET /admin/debitoren/{customer}/kontoauszug/vorschau
+     * Preview the account statement email without sending it.
+     */
+    public function previewAccountStatement(Customer $customer): RedirectResponse|\Illuminate\View\View
+    {
+        $vouchers = LexofficeVoucher::where('customer_id', $customer->id)
+            ->whereIn('voucher_type', [LexofficeVoucher::TYPE_SALES_INVOICE, LexofficeVoucher::TYPE_CREDIT_NOTE])
+            ->whereIn('voucher_status', [LexofficeVoucher::STATUS_OPEN, LexofficeVoucher::STATUS_OVERDUE])
+            ->orderBy('due_date')
+            ->get();
+
+        if ($vouchers->isEmpty()) {
+            return redirect()->route('admin.debtor.show', $customer)
+                ->with('error', 'Keine offenen Posten vorhanden — Vorschau nicht möglich.');
+        }
+
+        $html = (new AccountStatementMail($customer, '', $vouchers))->render();
+
+        return view('admin.debtor.email_preview', [
+            'title'       => 'Vorschau: Offene-Posten-Übersicht – ' . $customer->displayName(),
+            'subject'     => 'Ihre aktuellen offenen Posten – ' . $customer->customer_number,
+            'recipient'   => $customer->billing_email ?? $customer->email ?? '—',
+            'html'        => $html,
+            'send_route'  => route('admin.debtor.account_statement', $customer),
+            'send_label'  => 'Kontoübersicht jetzt senden',
+            'send_params' => [],
+            'back_route'  => route('admin.debtor.show', $customer),
+        ]);
+    }
+
+    /**
      * POST /admin/debitoren/{customer}/kontoauszug
      * Send an account statement (Offene-Posten-Übersicht) by email — not a dunning letter.
      */

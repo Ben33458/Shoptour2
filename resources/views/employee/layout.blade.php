@@ -79,6 +79,12 @@
                 Kasse
             </a>
             @endif
+            @if(config('knowledge.enabled'))
+            <a href="{{ route('employee.knowledge.chat') }}"
+               class="{{ request()->routeIs('employee.knowledge.*') ? 'active' : '' }}">
+                🧠 Wissensassistent
+            </a>
+            @endif
             @if(auth()->user()->isAdmin())
             <a href="{{ route('admin.orders.index') }}">Admin →</a>
             @endif

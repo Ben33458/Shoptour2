@@ -194,10 +194,10 @@ class ProductReconcileService
                     ? DB::table('wawi_artikel')->where('kArtikel', $wawiId)->first()
                     : null;
 
-                // Determine artikelnummer: Ninox → WaWi → fallback
-                $artnr = trim((string) ($snapshot['artnummer'] ?? ''));
-                if ($artnr === '' && $wawi) {
-                    $artnr = trim((string) ($wawi->cArtNr ?? ''));
+                // Determine artikelnummer: WaWi cArtNr → Ninox → fallback
+                $artnr = $wawi ? trim((string) ($wawi->cArtNr ?? '')) : '';
+                if ($artnr === '') {
+                    $artnr = trim((string) ($snapshot['artnummer'] ?? ''));
                 }
                 if ($artnr === '') {
                     $artnr = 'N' . $ninoxId;

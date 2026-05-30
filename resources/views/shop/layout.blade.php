@@ -270,6 +270,9 @@
 @if(session('success'))
     <div class="bg-green-50 border-b border-green-200 text-green-700 text-sm text-center py-2">{{ session('success') }}</div>
 @endif
+@if(session('warning'))
+    <div class="bg-amber-50 border-b border-amber-200 text-amber-700 text-sm text-center py-2">{{ session('warning') }}</div>
+@endif
 @if(session('info'))
     <div class="bg-blue-50 border-b border-blue-200 text-blue-700 text-sm text-center py-2">{{ session('info') }}</div>
 @endif
@@ -339,6 +342,44 @@
 </footer>
 
 @stack('scripts')
+
+{{-- ── Cookie-Consent-Banner (DSGVO/TTDSG) ─────────────────────────────────── --}}
+<div id="cookie-banner" style="display:none;"
+     class="fixed bottom-0 left-0 right-0 z-[9999] bg-white border-t border-gray-200 shadow-xl px-4 py-4">
+    <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div class="flex-1 text-sm text-gray-600">
+            <strong class="text-gray-800">🍪 Cookies &amp; Datenschutz</strong>
+            Wir verwenden technisch notwendige Cookies für den Betrieb des Shops (Session, Warenkorbdaten)
+            sowie einen Cookie für deine Darstellungseinstellungen.
+            Bei Nutzung von „Anmelden mit Google" werden Daten an Google übertragen.
+            Mehr dazu in unserer
+            <a href="{{ route('page.show', 'datenschutz') }}" class="underline hover:text-amber-600">Datenschutzerklärung</a>.
+        </div>
+        <div class="flex gap-2 shrink-0">
+            <button onclick="cookieConsent(false)"
+                    class="border border-gray-300 text-gray-600 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors">
+                Nur notwendige
+            </button>
+            <button onclick="cookieConsent(true)"
+                    class="bg-amber-500 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors">
+                Alle akzeptieren
+            </button>
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    var consent = null;
+    try { consent = localStorage.getItem('cookie_consent'); } catch(e) {}
+    if (!consent) {
+        document.getElementById('cookie-banner').style.display = 'block';
+    }
+})();
+function cookieConsent(all) {
+    try { localStorage.setItem('cookie_consent', all ? 'all' : 'necessary'); } catch(e) {}
+    document.getElementById('cookie-banner').style.display = 'none';
+}
+</script>
 
 {{-- Dark mode toggle --}}
 <script>

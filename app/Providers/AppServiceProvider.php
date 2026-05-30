@@ -2,7 +2,19 @@
 
 namespace App\Providers;
 
+use App\Models\Catalog\Product;
+use App\Models\Delivery\Tour;
+use App\Models\Employee\Employee;
+use App\Models\Orders\Order;
 use App\Models\Page;
+use App\Models\Pricing\Customer;
+use App\Models\Procurement\GoodsReceipt;
+use App\Observers\CustomerObserver;
+use App\Observers\EmployeeObserver;
+use App\Observers\GoodsReceiptObserver;
+use App\Observers\OrderObserver;
+use App\Observers\ProductObserver;
+use App\Observers\TourObserver;
 use App\Services\Pricing\EloquentPricingRepository;
 use App\Services\Pricing\PricingRepositoryInterface;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -36,6 +48,17 @@ class AppServiceProvider extends ServiceProvider
 
         $this->shareNavigationPages();
         $this->configureRateLimiting();
+        $this->registerNinoxObservers();
+    }
+
+    private function registerNinoxObservers(): void
+    {
+        Customer::observe(CustomerObserver::class);
+        Employee::observe(EmployeeObserver::class);
+        Order::observe(OrderObserver::class);
+        Product::observe(ProductObserver::class);
+        Tour::observe(TourObserver::class);
+        GoodsReceipt::observe(GoodsReceiptObserver::class);
     }
 
     // =========================================================================

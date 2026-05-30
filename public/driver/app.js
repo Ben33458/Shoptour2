@@ -38,11 +38,12 @@ const NOT_DELIVERED_REASONS = [
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-let db           = null;   // IDBDatabase
-let tourData     = null;   // { tour, stops, cash_register, avg_durations, leergut_map, delay_threshold } from /bootstrap
-let deviceId     = getOrCreateDeviceId();
-let syncing      = false;
-let selectedDate = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+let db                 = null;   // IDBDatabase
+let tourData           = null;   // { tour, stops, cash_register, avg_durations, leergut_map, delay_threshold } from /bootstrap
+let deviceId           = getOrCreateDeviceId();
+let syncing            = false;
+let selectedDate       = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+let showFinishedStops  = false;  // toggle: show/hide finished stops
 
 // ── Online/offline detection ───────────────────────────────────────────────────────
 
@@ -69,13 +70,14 @@ async function main() {
     initNoteSection();
     initRejectedPanel();
 
+    const isSessionAuth = window.__DRIVER_CONFIG__?.isSessionAuth;
     const token = getToken();
-    if (!token) {
+    if (!token && !isSessionAuth) {
         renderLoginPrompt();
         return;
     }
 
-    window.__DRIVER_CONFIG__.token = token;
+    if (token) window.__DRIVER_CONFIG__.token = token;
     await bootstrap();
     renderStops();
     document.getElementById('sync-btn').addEventListener('click', flushQueue);
@@ -176,11 +178,10 @@ function markEventsSynced(ids) {
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 function apiHeaders() {
-    return {
-        'Authorization': 'Bearer ' + getToken(),
-        'Content-Type':  'application/json',
-        'Accept':        'application/json',
-    };
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+    const token = getToken();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+    return headers;
 }
 
 async function apiFetch(method, path, body = null) {
@@ -197,14 +198,39 @@ async function bootstrap() {
         if (resp.status === 401) { handleAuthError(); return; }
         if (!resp.ok) throw new Error('Bootstrap HTTP ' + resp.status);
         tourData = await resp.json();
-        document.getElementById('tour-title').textContent =
-            tourData.tour
-                ? 'Tour ' + tourData.tour.tour_date
-                : 'Keine Tour – ' + selectedDate;
+        updateHeaderTitle();
     } catch (err) {
         tourData = null;
         showStatus('Bootstrap fehlgeschlagen: ' + err.message, 'error');
     }
+}
+
+function tourLabel(tour) {
+    return tour?.name || ('Tour ' + (tour?.tour_date ?? ''));
+}
+
+function updateHeaderTitle() {
+    const el = document.getElementById('tour-title');
+    if (!el) return;
+    if (tourData?.tour) {
+        el.textContent = tourLabel(tourData.tour);
+    } else {
+        el.textContent = 'Keine Tour – ' + selectedDate;
+    }
+}
+
+function switchTour(tourId) {
+    const entry = (tourData?.all_tours ?? []).find(t => t.tour.id === tourId);
+    if (!entry) return;
+    tourData.tour            = entry.tour;
+    tourData.stops           = entry.stops;
+    tourData.cash_register   = entry.cash_register;
+    tourData.avg_durations   = entry.avg_durations;
+    tourData.leergut_map     = entry.leergut_map;
+    tourData.open_balances   = entry.open_balances;
+    tourData.zielkassen      = entry.zielkassen;
+    updateHeaderTitle();
+    renderStops();
 }
 
 // ── Sync / flush queue ────────────────────────────────────────────────────────
@@ -427,16 +453,21 @@ function renderStops() {
     }
 
     if (!tourData.stops || tourData.stops.length === 0) {
-        container.innerHTML = `
+        const tourCardHtml = renderTourCard();
+        container.innerHTML = renderTourSelector() + tourCardHtml + `
             <div class="empty-state-card">
                 <p style="color:#9ca3af;margin-bottom:16px">
-                    Tour ${escHtml(tourData.tour.tour_date)} hat keine Stopps.
+                    ${escHtml(tourLabel(tourData.tour))} hat keine Stopps.
                 </p>
                 <div class="date-picker-row">
                     <input type="date" id="date-picker" value="${escHtml(selectedDate)}">
                     <button id="date-reload-btn" class="btn btn-secondary">Anderen Tag laden</button>
                 </div>
             </div>`;
+        document.getElementById('btn-tour-start')?.addEventListener('click', handleTourStart);
+        document.getElementById('btn-tour-end')?.addEventListener('click', showTourAbschlussModal);
+        document.getElementById('btn-kasse')?.addEventListener('click', showCashModal);
+        document.getElementById('btn-add-stop')?.addEventListener('click', showAddStopModal);
         attachDatePickerListeners();
         return;
     }
@@ -444,21 +475,42 @@ function renderStops() {
     // Tour-level header card
     const tourCardHtml = renderTourCard();
 
-    container.innerHTML = tourCardHtml + tourData.stops.map(stop => renderStopCard(stop)).join('');
+    const allStops      = tourData.stops ?? [];
+    const finishedCount = allStops.filter(s => s.status === 'finished').length;
+    const visibleStops  = showFinishedStops ? allStops : allStops.filter(s => s.status !== 'finished');
+    const toggleHtml    = finishedCount > 0
+        ? `<div style="text-align:center;padding:6px 0 2px">
+               <button id="toggle-finished-stops" class="btn btn-outline"
+                   style="font-size:.8rem;padding:4px 16px">
+                   ${showFinishedStops
+                       ? '▲ Abgeschlossene ausblenden'
+                       : `▼ ${finishedCount} abgeschlossene${finishedCount === 1 ? 'n' : ''} Stopp${finishedCount === 1 ? '' : 's'} anzeigen`}
+               </button>
+           </div>`
+        : '';
+
+    container.innerHTML = renderTourSelector() + tourCardHtml + toggleHtml + visibleStops.map(stop => renderStopCard(stop)).join('');
 
     // Tour card listeners
     document.getElementById('btn-tour-start')?.addEventListener('click', handleTourStart);
-    document.getElementById('btn-tour-end')?.addEventListener('click', handleTourEnd);
+    document.getElementById('btn-tour-end')?.addEventListener('click', showTourAbschlussModal);
     document.getElementById('btn-kasse')?.addEventListener('click', showCashModal);
+    document.getElementById('btn-add-stop')?.addEventListener('click', showAddStopModal);
+
+    document.getElementById('toggle-finished-stops')?.addEventListener('click', () => {
+        showFinishedStops = !showFinishedStops;
+        renderStops();
+    });
 
     tourData.stops.forEach(stop => {
         const card = document.getElementById('stop-' + stop.id);
         if (!card) return;
 
         card.querySelector('.btn-arrived')?.addEventListener('click',  () => handleArrived(stop));
+        card.querySelector('.btn-undo-' + stop.id)?.addEventListener('click', () => handleUndo(stop));
         card.querySelector('.btn-depart')?.addEventListener('click',   () => handleDepart(stop));
-        card.querySelector('.btn-finished')?.addEventListener('click', () => handleFinished(stop));
-        card.querySelector('.btn-leergut')?.addEventListener('click',  () => handleLeergutausgleich(stop));
+        card.querySelector('.btn-leergut')?.addEventListener('click',  () => showLeergutModal(stop));
+        card.querySelector('.btn-pay-' + stop.id)?.addEventListener('click', () => showPaymentModal(stop));
 
         (stop.order?.items ?? []).forEach(item => {
             card.querySelector('.btn-deliver-' + item.id)
@@ -469,7 +521,40 @@ function renderStops() {
 
         card.querySelector('.btn-upload-' + stop.id)
             ?.addEventListener('click', () => handleUpload(stop));
+
+        card.querySelectorAll('.upload-file-link').forEach(link => {
+            link.addEventListener('click', async e => {
+                e.preventDefault();
+                await openUploadFile(Number(link.dataset.uploadId));
+            });
+        });
     });
+}
+
+function renderTourSelector() {
+    const all = tourData?.all_tours ?? [];
+    if (all.length <= 1) return '';
+
+    const tabs = all.map(entry => {
+        const t        = entry.tour;
+        const isActive = t.id === tourData.tour?.id;
+        const isMine   = t.is_mine;
+        const label    = tourLabel(t);
+        const style    = isActive
+            ? 'background:#3730a3;color:#fff;border-color:#3730a3'
+            : (isMine
+                ? 'background:#eef2ff;color:#3730a3;border-color:#c7d2fe;font-weight:700'
+                : 'background:#f9fafb;color:#6b7280;border-color:#e5e7eb');
+        return `<button onclick="switchTour(${t.id})"
+                        style="flex:0 0 auto;padding:7px 14px;border-radius:20px;border:1.5px solid;
+                               font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;${style}">
+                    ${escHtml(label)}${isMine ? ' ★' : ''}
+                </button>`;
+    }).join('');
+
+    return `<div style="display:flex;gap:8px;overflow-x:auto;padding:10px 12px 0;scrollbar-width:none">
+                ${tabs}
+            </div>`;
 }
 
 function renderTourCard() {
@@ -480,32 +565,39 @@ function renderTourCard() {
     const reg         = tourData.cash_register;
 
     const startBtn = !isStarted
-        ? `<button id="btn-tour-start" class="btn btn-primary" style="flex:1">🚚 Tour starten</button>`
+        ? `<button id="btn-tour-start" class="btn btn-primary" style="flex:1" title="Startet die Tour und aktiviert die Zeiterfassung.">🚚 Tour starten</button>`
         : `<span style="font-size:.8rem;color:#166534;background:#dcfce7;padding:4px 10px;border-radius:6px">
                ✓ Gestartet ${fmtTime(tour.started_at)}</span>`;
 
     const endBtn = isStarted && !isEnded && allFinished
-        ? `<button id="btn-tour-end" class="btn btn-danger" style="flex:1">🏁 Tour beenden</button>`
+        ? `<button id="btn-tour-end" class="btn btn-danger" style="flex:1" title="Beendet die Tour. Alle Stopps müssen abgeschlossen sein.">🏁 Tour beenden</button>`
         : (isEnded
             ? `<span style="font-size:.8rem;color:#991b1b;background:#fee2e2;padding:4px 10px;border-radius:6px">
                    ✓ Beendet ${fmtTime(tour.ended_at)}</span>`
             : '');
 
     const kasseBtn = reg
-        ? `<button id="btn-kasse" class="btn btn-secondary" style="font-size:.8rem">
+        ? `<button id="btn-kasse" class="btn btn-secondary" style="font-size:.8rem" title="Kassenentnahme erfassen.">
                💰 ${escHtml(reg.name)}</button>`
         : '';
 
+    const addStopBtn = isStarted && !isEnded
+        ? `<button id="btn-add-stop" class="btn btn-secondary" style="font-size:.8rem" title="Zusätzlichen Kunden zur laufenden Tour hinzufügen.">+ Stopp</button>`
+        : '';
+
+    const totalVpe = tour.total_vpe ?? 0;
+
     return `
         <div class="stop-card" style="background:#eef2ff;border:1px solid #c7d2fe">
-            <h2 style="color:#3730a3">Tour ${escHtml(tour.tour_date)}</h2>
+            <h2 style="color:#3730a3">${escHtml(tourLabel(tour))}</h2>
             <p style="font-size:.8rem;color:#4338ca;margin-bottom:10px">
-                ${tourData.stops.length} Stopps · Status: ${escHtml(tour.status)}
+                ${tourData.stops.length} Stopps · Status: ${escHtml(tour.status)} · Gesamt: ${totalVpe} VPE
             </p>
             <div class="stop-actions">
                 ${startBtn}
                 ${endBtn}
                 ${kasseBtn}
+                ${addStopBtn}
             </div>
         </div>`;
 }
@@ -529,6 +621,9 @@ function renderStopCard(stop) {
     const arrivedDis  = stop.status !== 'open'    ? 'disabled' : '';
     const finishedDis = stop.status !== 'arrived' ? 'disabled' : '';
     const departDis   = (stop.status !== 'arrived' && stop.status !== 'finished') ? 'disabled' : '';
+    const undoBtn = (stop.status === 'arrived' || stop.status === 'finished')
+        ? `<button class="btn btn-undo btn-undo-${stop.id}" style="background:#fef9c3;color:#854d0e;border:1px solid #fde047;font-size:.8rem;" title="Macht Ankunft oder Abschluss rückgängig. Bei Abschluss wird die Lagerbuchung zurückgedreht.">↩ Rückgängig</button>`
+        : '';
 
     // Delay warning
     const delayHtml = buildDelayWarning(stop);
@@ -536,9 +631,15 @@ function renderStopCard(stop) {
     // Leergut button — only if stop is arrived and has leergut items
     const leergutItems = getLeergutItems(stop);
     const leergutBtn = (stop.status === 'arrived' && leergutItems.length > 0)
-        ? `<button class="btn btn-secondary btn-leergut" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a">
+        ? `<button class="btn btn-secondary btn-leergut" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" title="Leergut-Rücknahme erfassen (Kisten/Flaschen).">
                ♻ Leergutausgleich (${leergutItems.length} Artikel)
            </button>`
+        : '';
+
+    // VPE total for this stop
+    const stopVpe = (stop.order?.items ?? []).reduce((sum, i) => sum + i.quantity, 0);
+    const vpeHtml = stopVpe > 0
+        ? `<p style="font-size:.8rem;color:#64748b;margin:0 0 6px;font-weight:600">📦 ${stopVpe} VPE</p>`
         : '';
 
     // Items list
@@ -571,15 +672,25 @@ function renderStopCard(stop) {
     }).join('');
 
     // Upload section
-    const uploadCount = stop.uploads_count ?? 0;
+    const uploads     = stop.uploads ?? [];
     const canUpload   = stop.status !== 'open';
-    const uploadBadge = uploadCount > 0
-        ? `<span class="upload-badge">${uploadCount} hochgeladen</span>`
+    const uploadBadge = uploads.length > 0
+        ? `<span class="upload-badge">${uploads.length} hochgeladen</span>`
         : '';
+    const uploadedFilesList = uploads.map(u => {
+        const icon = (u.mime_type ?? '').startsWith('image/') ? '🖼' : '📄';
+        const name = escHtml(u.original_name ?? ('Datei #' + u.id));
+        return `<a class="upload-file-link" data-upload-id="${u.id}" href="#"
+                   style="display:flex;align-items:center;gap:6px;padding:4px 8px;
+                          background:#f0f9ff;border-radius:4px;font-size:.8rem;
+                          color:#0284c7;margin-bottom:4px;text-decoration:none">
+                     ${icon} <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px">${name}</span>
+                   </a>`;
+    }).join('');
     const uploadControls = canUpload
         ? `<div class="upload-controls">
                <input type="file" id="upload-file-${stop.id}" accept="image/*,application/pdf" class="upload-input">
-               <button class="btn btn-secondary btn-upload btn-upload-${stop.id}">📤 Hochladen</button>
+               <button class="btn btn-secondary btn-upload btn-upload-${stop.id}" title="Foto oder Lieferschein hochladen.">📤 Hochladen</button>
            </div>`
         : `<p class="upload-hint">Verfügbar nach Ankunft</p>`;
 
@@ -588,6 +699,43 @@ function renderStopCard(stop) {
         : '';
     const deliveryNoteHtml = stop.delivery_note
         ? `<p class="stop-delivery-note">ℹ ${escHtml(stop.delivery_note)}</p>`
+        : '';
+
+    // Abstellort / Abstellen erlaubt
+    const dropOffLabels = { keller: 'Keller', einfahrt: 'Einfahrt', eg: 'Erdgeschoss', garage: 'Garage', og1: 'OG 1', sonstiges: 'Sonstiges' };
+    const dropOffLoc = stop.drop_off_location;
+    let abstellortText = dropOffLabels[dropOffLoc] ?? '';
+    if (dropOffLoc === 'sonstiges' && stop.drop_off_location_custom) abstellortText = stop.drop_off_location_custom;
+    const abstellortHtml = stop.leave_at_door
+        ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:.82rem;color:#166534;font-weight:600">✅ Abstellen erlaubt${abstellortText ? ` – ${escHtml(abstellortText)}` : ''}</div>`
+        : (abstellortText ? `<p style="font-size:.82rem;color:#374151;margin:0 0 4px">📦 Abstellort: ${escHtml(abstellortText)}</p>` : '');
+    const orderNotesHtml = stop.order?.notes
+        ? `<div class="order-notes">📋 ${escHtml(stop.order.notes)}</div>`
+        : '';
+
+    // Open customer balance (from previous unpaid invoices)
+    const openBalance = stop.customer_id ? (tourData?.open_balances?.[stop.customer_id] ?? 0) : 0;
+    const openBalanceHtml = openBalance > 0
+        ? `<div class="open-balance-badge">⚠ Offene Posten: ${escHtml(fmtEuro(openBalance))}</div>`
+        : '';
+
+    // Payments already recorded for this stop
+    const paymentsRecorded = stop.payments_recorded ?? [];
+    const cashPaidMilli = paymentsRecorded.filter(p => p.method === 'cash').reduce((s, p) => s + p.amount_milli, 0);
+    const ecPaidMilli   = paymentsRecorded.filter(p => p.method === 'ec').reduce((s, p)   => s + p.amount_milli, 0);
+    const orderTotalMilli = (stop.order?.total_gross_milli ?? 0) + (stop.order?.total_pfand_brutto_milli ?? 0);
+    const paymentSummaryHtml = paymentsRecorded.length > 0
+        ? `<div class="payment-summary">
+               ${cashPaidMilli > 0 ? `<span class="pay-cash">Bar: ${escHtml(fmtEuro(cashPaidMilli))}</span>` : ''}
+               ${ecPaidMilli   > 0 ? `<span class="pay-ec">EC: ${escHtml(fmtEuro(ecPaidMilli))}</span>`       : ''}
+           </div>`
+        : '';
+
+    // Payment button (visible when stop is arrived)
+    const payBtn = stop.status === 'arrived'
+        ? `<button class="btn btn-payment btn-pay-${stop.id}" style="background:#f0fdf4;color:#166534;border:1px solid #86efac" title="Bar- oder EC-Zahlung für diese Lieferung erfassen.">
+               💳 Zahlung
+           </button>`
         : '';
 
     const timeHtml = [
@@ -600,24 +748,31 @@ function renderStopCard(stop) {
         <div class="stop-card" id="stop-${stop.id}">
             <h2>Stopp ${stop.stop_index + 1} – ${escHtml(stop.customer_name ?? ('Auftrag #' + stop.order_id))}</h2>
             ${addressHtml}
+            ${abstellortHtml}
             ${deliveryNoteHtml}
+            ${orderNotesHtml}
+            ${openBalanceHtml}
+            ${paymentSummaryHtml}
             ${delayHtml}
             <p class="stop-meta">
                 <span class="stop-status ${stop.status}">${statusLabel[stop.status] ?? stop.status}</span>
                 ${timeHtml}
             </p>
+            ${vpeHtml}
             ${itemsHtml ? `<ul class="items-list">${itemsHtml}</ul>` : ''}
             <div class="stop-actions">
-                <button class="btn btn-primary btn-arrived"    ${arrivedDis}>Angekommen</button>
+                <button class="btn btn-primary btn-arrived"  ${arrivedDis} title="Markiert diesen Stopp als angekommen. Waren können jetzt übergeben werden.">Angekommen</button>
                 ${leergutBtn}
-                <button class="btn btn-secondary btn-depart"   ${departDis}>Abgefahren</button>
-                <button class="btn btn-secondary btn-finished" ${finishedDis}>Abschließen</button>
+                ${payBtn}
+                <button class="btn btn-secondary btn-depart" ${departDis} title="Speichert Abfahrtszeit und schließt den Stopp ab (bucht Lager, Bestellung auf Geliefert).">Abgefahren</button>
+                ${undoBtn}
             </div>
             <div class="upload-section">
                 <div class="upload-header">
                     <span class="upload-label">📷 Lieferdokument</span>
                     ${uploadBadge}
                 </div>
+                ${uploadedFilesList}
                 ${uploadControls}
             </div>
         </div>`;
@@ -667,7 +822,6 @@ function getLeergutItems(stop) {
 
 async function handleTourStart() {
     if (!tourData?.tour) return;
-    if (!confirm('Tour jetzt starten?')) return;
     await enqueueEvent('tour_start', tourData.tour.id, null, {});
     tourData.tour.started_at = new Date().toISOString();
     tourData.tour.status = 'in_progress';
@@ -679,12 +833,541 @@ async function handleTourStart() {
 
 async function handleTourEnd() {
     if (!tourData?.tour) return;
-    if (!confirm('Tour wirklich beenden?')) return;
     await enqueueEvent('tour_end', tourData.tour.id, null, {});
     tourData.tour.ended_at = new Date().toISOString();
     tourData.tour.status = 'done';
     renderStops();
     showStatus('Tour beendet.', 'success');
+    await updatePendingCount();
+    if (navigator.onLine) flushQueue();
+}
+
+async function handleUndo(stop) {
+    const eventType = stop.status === 'arrived' ? 'undo_arrived' : 'undo_finished';
+    const label     = stop.status === 'arrived' ? 'Ankunft rückgängig' : 'Abschluss rückgängig';
+
+    await enqueueEvent(eventType, stop.tour_id, stop.id, {});
+
+    if (stop.status === 'arrived') {
+        stop.status     = 'open';
+        stop.arrived_at = null;
+    } else {
+        stop.status      = 'arrived';
+        stop.finished_at = null;
+        stop.departed_at = null;
+    }
+
+    renderStops();
+    showStatus(label + ' gemacht.', 'success');
+    await updatePendingCount();
+    if (navigator.onLine) flushQueue();
+}
+
+// ── Tour-Abschluss Modal ──────────────────────────────────────────────────────
+
+function showTourAbschlussModal() {
+    if (!tourData?.tour) return;
+
+    document.getElementById('tour-abschluss-modal')?.remove();
+
+    const stops      = tourData.stops ?? [];
+    const zielkassen = tourData.zielkassen ?? [];
+
+    // Sum up cash/EC from server-confirmed payments
+    let totalCashMilli = 0;
+    let totalEcMilli   = 0;
+    const stopRows = stops.map(stop => {
+        const payments = stop.payments_recorded ?? [];
+        const cash = payments.filter(p => p.method === 'cash').reduce((s, p) => s + p.amount_milli, 0);
+        const ec   = payments.filter(p => p.method === 'ec').reduce((s, p)   => s + p.amount_milli, 0);
+        totalCashMilli += cash;
+        totalEcMilli   += ec;
+        const name = escHtml(stop.customer_name ?? ('Auftrag #' + stop.order_id));
+        if (cash === 0 && ec === 0) {
+            return `<div class="abschluss-stop">${name} <span style="color:#9ca3af">keine Zahlung</span></div>`;
+        }
+        return `<div class="abschluss-stop">${name}
+            ${cash > 0 ? `<span class="pay-cash">Bar: ${escHtml(fmtEuro(cash))}</span>` : ''}
+            ${ec   > 0 ? `<span class="pay-ec">EC: ${escHtml(fmtEuro(ec))}</span>` : ''}
+        </div>`;
+    }).join('');
+
+    const einzahlungsMilli = totalCashMilli; // EC goes to bank directly
+
+    const kassenOpts = zielkassen.length > 0
+        ? zielkassen.map((k, i) =>
+            `<label class="kasse-option">
+                <input type="radio" name="zielkasse" value="${k.id}" ${i === 0 ? 'checked' : ''}>
+                ${escHtml(k.name)}
+            </label>`
+          ).join('')
+        : '<p style="color:#9ca3af;font-size:.85rem">Keine Zielkassen konfiguriert</p>';
+
+    const modal = document.createElement('div');
+    modal.id = 'tour-abschluss-modal';
+    modal.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;
+                    display:flex;align-items:flex-end;justify-content:center">
+            <div style="background:#fff;border-radius:16px 16px 0 0;padding:20px;
+                        width:100%;max-width:480px;max-height:85dvh;overflow-y:auto">
+                <h3 style="font-size:1rem;font-weight:700;margin-bottom:14px">🏁 Tour abschließen</h3>
+
+                <div style="background:#f9fafb;border-radius:8px;padding:12px;margin-bottom:14px">
+                    <p style="font-size:.78rem;font-weight:600;color:#6b7280;margin-bottom:8px">Zahlungsübersicht</p>
+                    ${stopRows || '<p style="color:#9ca3af;font-size:.85rem">Keine Zahlungen erfasst</p>'}
+                    <hr style="border:none;border-top:1px solid #e5e7eb;margin:10px 0">
+                    <div style="display:flex;justify-content:space-between;font-size:.9rem;font-weight:600">
+                        <span>Bar gesamt:</span><span>${escHtml(fmtEuro(totalCashMilli))}</span>
+                    </div>
+                    ${totalEcMilli > 0 ? `
+                    <div style="display:flex;justify-content:space-between;font-size:.85rem;color:#6b7280">
+                        <span>EC gesamt:</span><span>${escHtml(fmtEuro(totalEcMilli))}</span>
+                    </div>` : ''}
+                </div>
+
+                ${zielkassen.length > 0 ? `
+                <p style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px">Einzahlung in Kasse</p>
+                <div style="margin-bottom:12px">${kassenOpts}</div>
+
+                <label style="font-size:.8rem;font-weight:500;color:#374151;display:block;margin-bottom:4px">
+                    Betrag (€)
+                </label>
+                <input id="deposit-amount" type="number" min="0" step="0.01"
+                       value="${(einzahlungsMilli / 1000).toFixed(2)}"
+                       style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                              font-size:1rem;margin-bottom:10px">
+
+                <label style="font-size:.8rem;font-weight:500;color:#374151;display:block;margin-bottom:4px">
+                    Notiz (optional)
+                </label>
+                <input id="deposit-note" type="text" placeholder="z.B. Abends eingeworfen …"
+                       style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                              font-size:.9rem;margin-bottom:14px">
+                ` : ''}
+
+                <div style="display:flex;gap:8px">
+                    <button id="abschluss-cancel"
+                            style="flex:1;padding:10px;border-radius:8px;border:1px solid #d1d5db;
+                                   background:#fff;cursor:pointer">Abbrechen</button>
+                    <button id="abschluss-confirm"
+                            style="flex:1;padding:10px;border-radius:8px;border:none;
+                                   background:#1a56db;color:#fff;font-weight:600;cursor:pointer">
+                        ✓ Tour beenden
+                    </button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#abschluss-cancel').addEventListener('click', () => modal.remove());
+
+    modal.querySelector('#abschluss-confirm').addEventListener('click', async () => {
+        modal.remove();
+        await handleTourEnd();
+
+        if (zielkassen.length > 0) {
+            const selectedKasseId = parseInt(
+                modal.querySelector('input[name="zielkasse"]:checked')?.value ?? '0', 10
+            );
+            const depositEur  = parseFloat(modal.querySelector('#deposit-amount')?.value ?? '0');
+            const depositNote = (modal.querySelector('#deposit-note')?.value ?? '').trim();
+            const depositCents = Math.round(depositEur * 100);
+
+            if (selectedKasseId > 0 && depositCents > 0) {
+                await enqueueEvent('cash_deposit', tourData?.tour?.id ?? null, null, {
+                    cash_register_id: selectedKasseId,
+                    amount_cents:     depositCents,
+                    note:             depositNote || null,
+                });
+                await updatePendingCount();
+                if (navigator.onLine) flushQueue();
+            }
+        }
+    });
+}
+
+// ── Zahlungs-Modal pro Stop ───────────────────────────────────────────────────
+
+function showPaymentModal(stop) {
+    document.getElementById('payment-modal')?.remove();
+
+    const orderTotal  = (stop.order?.total_gross_milli ?? 0) + (stop.order?.total_pfand_brutto_milli ?? 0);
+    const alreadyPaid = (stop.payments_recorded ?? []).reduce((s, p) => s + p.amount_milli, 0);
+    const remaining   = Math.max(0, orderTotal - alreadyPaid);
+
+    const modal = document.createElement('div');
+    modal.id = 'payment-modal';
+    modal.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;
+                    display:flex;align-items:flex-end;justify-content:center">
+            <div style="background:#fff;border-radius:16px 16px 0 0;padding:24px 20px;
+                        width:100%;max-width:480px;max-height:80dvh;overflow-y:auto">
+                <h3 style="font-size:1rem;font-weight:700;margin-bottom:2px">💳 Zahlung erfassen</h3>
+                <p style="font-size:.8rem;color:#6b7280;margin-bottom:4px">
+                    ${escHtml(stop.customer_name ?? 'Kunde')}
+                </p>
+                <p style="font-size:.85rem;color:#374151;margin-bottom:14px">
+                    Offen: <strong>${escHtml(fmtEuro(remaining))}</strong>
+                    ${alreadyPaid > 0 ? `<span style="color:#9ca3af"> (bereits: ${escHtml(fmtEuro(alreadyPaid))})</span>` : ''}
+                </p>
+
+                <div style="display:flex;gap:8px;margin-bottom:14px">
+                    <button id="pay-type-cash" data-method="cash"
+                            style="flex:1;padding:10px;border-radius:8px;font-weight:600;cursor:pointer;
+                                   border:2px solid #1a56db;background:#eff6ff;color:#1e40af">
+                        💵 Bar
+                    </button>
+                    <button id="pay-type-ec" data-method="ec"
+                            style="flex:1;padding:10px;border-radius:8px;font-weight:600;cursor:pointer;
+                                   border:2px solid #d1d5db;background:#f9fafb;color:#374151">
+                        💳 EC
+                    </button>
+                </div>
+
+                <label style="display:block;font-size:.8rem;font-weight:500;color:#374151;margin-bottom:4px">
+                    Betrag (€)
+                </label>
+                <input id="pay-amount" type="number" min="0.01" step="0.01"
+                       value="${(remaining / 1000).toFixed(2)}"
+                       style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                              font-size:1.1rem;margin-bottom:12px">
+
+                <div id="ec-ref-row" style="display:none">
+                    <label style="display:block;font-size:.8rem;font-weight:500;color:#374151;margin-bottom:4px">
+                        Referenz / Beleg-Nr. (optional)
+                    </label>
+                    <input id="pay-reference" type="text" placeholder="z.B. Terminal-Bon-Nr."
+                           style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                                  font-size:.9rem;margin-bottom:12px">
+                </div>
+
+                <div style="display:flex;gap:8px">
+                    <button id="pay-cancel"
+                            style="flex:1;padding:10px;border-radius:8px;border:1px solid #d1d5db;
+                                   background:#fff;cursor:pointer">Abbrechen</button>
+                    <button id="pay-save"
+                            style="flex:1;padding:10px;border-radius:8px;border:none;
+                                   background:#166534;color:#fff;font-weight:600;cursor:pointer">Speichern</button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    let selectedMethod = 'cash';
+
+    const btnCash = modal.querySelector('#pay-type-cash');
+    const btnEc   = modal.querySelector('#pay-type-ec');
+    const ecRow   = modal.querySelector('#ec-ref-row');
+
+    function setMethod(method) {
+        selectedMethod = method;
+        btnCash.style.borderColor = method === 'cash' ? '#1a56db' : '#d1d5db';
+        btnCash.style.background  = method === 'cash' ? '#eff6ff' : '#f9fafb';
+        btnEc.style.borderColor   = method === 'ec'   ? '#1a56db' : '#d1d5db';
+        btnEc.style.background    = method === 'ec'   ? '#eff6ff' : '#f9fafb';
+        ecRow.style.display       = method === 'ec'   ? '' : 'none';
+    }
+
+    btnCash.addEventListener('click', () => setMethod('cash'));
+    btnEc.addEventListener('click',   () => setMethod('ec'));
+
+    modal.querySelector('#pay-cancel').addEventListener('click', () => modal.remove());
+    modal.querySelector('#pay-save').addEventListener('click', async () => {
+        const amountEur = parseFloat(modal.querySelector('#pay-amount').value);
+        if (!amountEur || amountEur <= 0) { alert('Bitte gültigen Betrag eingeben.'); return; }
+
+        const amountMilli = Math.round(amountEur * 1000);
+        const reference   = modal.querySelector('#pay-reference')?.value.trim() ?? '';
+
+        await enqueueEvent('payment', tourData?.tour?.id ?? null, stop.id, {
+            method:      selectedMethod,
+            amount_milli: amountMilli,
+            reference:   reference || null,
+        });
+
+        // Optimistic update: add to local payments_recorded
+        const s = tourData?.stops.find(s => s.id === stop.id);
+        if (s) {
+            s.payments_recorded = s.payments_recorded ?? [];
+            s.payments_recorded.push({ amount_milli: amountMilli, method: selectedMethod });
+        }
+
+        modal.remove();
+        renderStops();
+        showStatus(`Zahlung (${selectedMethod === 'cash' ? 'Bar' : 'EC'}: ${fmtEuro(amountMilli)}) gespeichert.`, 'success');
+        await updatePendingCount();
+        if (navigator.onLine) flushQueue();
+    });
+}
+
+// ── Ad-hoc Stopp hinzufügen ───────────────────────────────────────────────────
+
+let _addStopDebounceTimer = null;
+
+function showAddStopModal() {
+    if (!navigator.onLine) {
+        showStatus('Stopp hinzufügen erfordert eine Internetverbindung.', 'error');
+        return;
+    }
+    if (!tourData?.tour) return;
+
+    document.getElementById('add-stop-modal')?.remove();
+
+    let selectedCustomer = null;
+
+    const modal = document.createElement('div');
+    modal.id = 'add-stop-modal';
+    modal.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;
+                    display:flex;align-items:flex-end;justify-content:center">
+            <div style="background:#fff;border-radius:16px 16px 0 0;padding:24px 20px;
+                        width:100%;max-width:480px;max-height:85dvh;overflow-y:auto">
+                <h3 style="font-size:1rem;font-weight:700;margin-bottom:14px">+ Stopp hinzufügen</h3>
+
+                <label style="font-size:.8rem;font-weight:500;color:#374151;display:block;margin-bottom:4px">
+                    Kundensuche (Name oder Kundennummer)
+                </label>
+                <input id="add-stop-search" type="text" placeholder="Mind. 2 Zeichen eingeben…"
+                       autocomplete="off"
+                       style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                              font-size:.95rem;margin-bottom:6px">
+
+                <div id="add-stop-results"
+                     style="border:1px solid #e5e7eb;border-radius:8px;max-height:200px;
+                            overflow-y:auto;margin-bottom:12px;display:none"></div>
+
+                <div id="add-stop-selected" style="display:none;
+                     background:#f0fdf4;border:1px solid #86efac;border-radius:8px;
+                     padding:10px 12px;margin-bottom:12px;font-size:.88rem;color:#166534">
+                </div>
+
+                <label style="font-size:.8rem;font-weight:500;color:#374151;display:block;margin-bottom:4px">
+                    Notiz (optional)
+                </label>
+                <input id="add-stop-note" type="text" placeholder="z.B. Zusatzlieferung, Kundenanfrage …"
+                       style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;
+                              font-size:.9rem;margin-bottom:14px">
+
+                <div style="display:flex;gap:8px">
+                    <button id="add-stop-cancel"
+                            style="flex:1;padding:10px;border-radius:8px;border:1px solid #d1d5db;
+                                   background:#fff;cursor:pointer">Abbrechen</button>
+                    <button id="add-stop-confirm" disabled
+                            style="flex:1;padding:10px;border-radius:8px;border:none;
+                                   background:#1a56db;color:#fff;font-weight:600;cursor:pointer;opacity:.4">
+                        Stopp hinzufügen
+                    </button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    const searchInput   = modal.querySelector('#add-stop-search');
+    const resultsBox    = modal.querySelector('#add-stop-results');
+    const selectedBox   = modal.querySelector('#add-stop-selected');
+    const confirmBtn    = modal.querySelector('#add-stop-confirm');
+
+    function selectCustomer(customer) {
+        selectedCustomer = customer;
+        searchInput.value = customer.display_name + (customer.customer_number ? ' (' + customer.customer_number + ')' : '');
+        resultsBox.style.display = 'none';
+        selectedBox.textContent  = '✓ ' + customer.display_name
+            + (customer.city ? ' · ' + customer.city : '')
+            + (customer.customer_number ? ' · #' + customer.customer_number : '');
+        selectedBox.style.display = '';
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+    }
+
+    function renderResults(customers) {
+        if (customers.length === 0) {
+            resultsBox.innerHTML = '<p style="padding:10px;font-size:.85rem;color:#9ca3af">Keine Ergebnisse</p>';
+            resultsBox.style.display = '';
+            return;
+        }
+        resultsBox.innerHTML = customers.map(c =>
+            `<div class="add-stop-result" data-id="${c.id}"
+                  style="padding:10px 12px;cursor:pointer;font-size:.88rem;border-bottom:1px solid #f3f4f6">
+                <strong>${escHtml(c.display_name)}</strong>
+                ${c.customer_number ? `<span style="color:#9ca3af"> · #${escHtml(c.customer_number)}</span>` : ''}
+                ${c.city ? `<span style="color:#6b7280"> · ${escHtml(c.city)}</span>` : ''}
+            </div>`
+        ).join('');
+        resultsBox.style.display = '';
+
+        resultsBox.querySelectorAll('.add-stop-result').forEach(el => {
+            el.addEventListener('mouseenter', () => { el.style.background = '#f9fafb'; });
+            el.addEventListener('mouseleave', () => { el.style.background = ''; });
+            el.addEventListener('click', () => {
+                const c = customers.find(c => c.id === parseInt(el.dataset.id, 10));
+                if (c) selectCustomer(c);
+            });
+        });
+    }
+
+    searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim();
+        clearTimeout(_addStopDebounceTimer);
+        selectedCustomer = null;
+        selectedBox.style.display = 'none';
+        confirmBtn.disabled = true;
+        confirmBtn.style.opacity = '.4';
+
+        if (q.length < 2) { resultsBox.style.display = 'none'; return; }
+
+        _addStopDebounceTimer = setTimeout(async () => {
+            try {
+                const resp = await apiFetch('GET', '/customers?q=' + encodeURIComponent(q) + '&limit=10');
+                if (resp.ok) renderResults(await resp.json());
+            } catch { /* ignore */ }
+        }, 300);
+    });
+
+    modal.querySelector('#add-stop-cancel').addEventListener('click', () => modal.remove());
+
+    modal.querySelector('#add-stop-confirm').addEventListener('click', async () => {
+        if (!selectedCustomer) return;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Wird hinzugefügt…';
+
+        const note = modal.querySelector('#add-stop-note').value.trim();
+
+        try {
+            const resp = await apiFetch('POST', '/add-stop', {
+                customer_id: selectedCustomer.id,
+                note:        note || null,
+            });
+
+            if (resp.status === 401) { handleAuthError(); return; }
+
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error ?? 'Fehler beim Hinzufügen des Stopps');
+            }
+
+            const result = await resp.json();
+            modal.remove();
+
+            // Insert new stop into local tourData
+            tourData.stops.push(result.stop);
+            renderStops();
+
+            const msg = result.reused_existing_order
+                ? `Stopp hinzugefügt (Bestellung #${result.order_id} wiederverwendet).`
+                : 'Neuer Stopp hinzugefügt.';
+            showStatus(msg, 'success');
+
+            // Scroll to new stop
+            setTimeout(() => {
+                document.getElementById('stop-' + result.stop.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+
+        } catch (err) {
+            showStatus('Fehler: ' + err.message, 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Stopp hinzufügen';
+            confirmBtn.style.opacity = '1';
+        }
+    });
+
+    searchInput.focus();
+}
+
+// ── Leergut-Modal (mit Pfandausgleich-Wahl) ───────────────────────────────────
+
+async function showLeergutModal(stop) {
+    const items = getLeergutItems(stop);
+    if (items.length === 0) return;
+
+    const isDepositExempt = stop.is_deposit_exempt ?? false;
+    const listHtml = items.map(i =>
+        `<div style="display:flex;justify-content:space-between;font-size:.88rem;padding:4px 0">
+            <span>${escHtml(i.leergut_name)}</span>
+            <span>${i.qty}×</span>
+        </div>`
+    ).join('');
+
+    document.getElementById('leergut-modal')?.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'leergut-modal';
+    modal.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:250;
+                    display:flex;align-items:flex-end;justify-content:center">
+            <div style="background:#fff;border-radius:16px 16px 0 0;padding:24px 20px;
+                        width:100%;max-width:480px">
+                <h3 style="font-size:1rem;font-weight:700;margin-bottom:10px">♻ Leergut erfassen</h3>
+                <div style="background:#fef3c7;border-radius:8px;padding:10px 12px;margin-bottom:14px">
+                    ${listHtml}
+                </div>
+
+                ${!isDepositExempt ? `
+                <p style="font-size:.82rem;font-weight:600;color:#374151;margin-bottom:8px">Abwicklung:</p>
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer">
+                    <input type="radio" name="leergut-mode" value="adjust" checked>
+                    <span>
+                        <strong>Pfandausgleich buchen</strong><br>
+                        <span style="font-size:.78rem;color:#6b7280">Betrag wird vom Rechnungsbetrag abgezogen</span>
+                    </span>
+                </label>
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:14px;cursor:pointer">
+                    <input type="radio" name="leergut-mode" value="record_only">
+                    <span>
+                        <strong>Nur erfassen</strong><br>
+                        <span style="font-size:.78rem;color:#6b7280">Mengen protokollieren, kein Abzug</span>
+                    </span>
+                </label>
+                ` : `
+                <p style="font-size:.82rem;color:#6b7280;margin-bottom:14px">
+                    ℹ Nur Mengen werden erfasst (Pfandausgleich-befreit).
+                </p>
+                `}
+
+                <div style="display:flex;gap:8px">
+                    <button id="leergut-cancel"
+                            style="flex:1;padding:10px;border-radius:8px;border:1px solid #d1d5db;
+                                   background:#fff;cursor:pointer">Abbrechen</button>
+                    <button id="leergut-confirm"
+                            style="flex:1;padding:10px;border-radius:8px;border:none;
+                                   background:#92400e;color:#fff;font-weight:600;cursor:pointer">Bestätigen</button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector('#leergut-cancel').addEventListener('click', () => modal.remove());
+    modal.querySelector('#leergut-confirm').addEventListener('click', async () => {
+        const mode = modal.querySelector('input[name="leergut-mode"]:checked')?.value ?? 'adjust';
+        const adjustOrder = !isDepositExempt && mode === 'adjust';
+
+        modal.remove();
+        await commitLeergutausgleich(stop, items, adjustOrder);
+    });
+}
+
+async function commitLeergutausgleich(stop, items, adjustOrder) {
+    const payload = {
+        order_id:     stop.order_id,
+        adjust_order: adjustOrder,
+        items:        items.map(i => ({
+            wawi_artikel_nr:        i.leergut_art_nr ?? '',
+            qty:                    i.qty,
+            leergut_name:           i.leergut_name,
+            unit_price_net_milli:   i.unit_price_net_milli,
+            unit_price_gross_milli: i.unit_price_gross_milli,
+            tax_rate_percent:       19,
+        })),
+    };
+
+    await enqueueEvent('leergutausgleich', tourData?.tour?.id ?? null, stop.id, payload);
+    showStatus(
+        adjustOrder ? 'Leergutausgleich gebucht.' : 'Leergut erfasst (ohne Abzug).',
+        'success',
+    );
     await updatePendingCount();
     if (navigator.onLine) flushQueue();
 }
@@ -699,20 +1382,88 @@ async function handleArrived(stop) {
 }
 
 async function handleDepart(stop) {
-    await enqueueEvent('depart', tourData?.tour?.id ?? null, stop.id, {});
-    updateStopStatusLocally(stop, stop.status, { departed_at: new Date().toISOString() });
-    renderStops();
-    showStatus('Abfahrt gespeichert.', 'success');
-    await updatePendingCount();
-    if (navigator.onLine) flushQueue();
+    const current     = tourData?.stops.find(s => s.id === stop.id) ?? stop;
+    const wasArrived  = current.status === 'arrived';
+
+    if (wasArrived) {
+        const items        = current.order?.items ?? [];
+        const totalOrdered = items.reduce((s, i) => s + i.quantity, 0);
+        if (totalOrdered > 0) {
+            const fulfillments   = current.item_fulfillments ?? [];
+            const totalDelivered = fulfillments.reduce((s, f) => s + (f.delivered_qty ?? 0), 0);
+            const totalND        = fulfillments.reduce((s, f) => s + (f.not_delivered_qty ?? 0), 0);
+            if (totalDelivered + totalND < totalOrdered) {
+                showDepartConfirm(current, totalDelivered, totalOrdered);
+                return;
+            }
+        }
+    }
+
+    await proceedDepart(current);
 }
 
-async function handleFinished(stop) {
-    if (!confirm('Stopp wirklich abschließen?')) return;
-    await enqueueEvent('finished', tourData?.tour?.id ?? null, stop.id, {});
-    updateStopStatusLocally(stop, 'finished');
+function showDepartConfirm(stop, totalDelivered, totalOrdered) {
+    document.getElementById('depart-confirm-' + stop.id)?.remove();
+
+    const card = document.getElementById('stop-' + stop.id);
+    if (!card) return;
+
+    const leergutItems = getLeergutItems(stop);
+    const leergutBtn   = leergutItems.length > 0
+        ? `<button id="depart-leergut-${stop.id}" class="btn btn-secondary"
+               style="font-size:.85rem;background:#fef3c7;color:#92400e;border:1px solid #fde68a">
+               ♻ Leergut erfassen
+           </button>`
+        : '';
+
+    const msg = totalDelivered === 0
+        ? 'Kein Artikel wurde als geliefert markiert.'
+        : `Nur ${totalDelivered} von ${totalOrdered} VPE als geliefert markiert.`;
+
+    const panel = document.createElement('div');
+    panel.id = 'depart-confirm-' + stop.id;
+    panel.innerHTML = `
+        <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;
+                    padding:12px;margin:8px 0 4px">
+            <p style="font-weight:600;color:#92400e;margin:0 0 4px">⚠ Unvollständig geliefert?</p>
+            <p style="font-size:.85rem;color:#78350f;margin:0 0 10px">
+                ${escHtml(msg)} Wirklich abfahren?
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button id="depart-confirm-yes-${stop.id}" class="btn btn-primary" style="font-size:.85rem">Ja, abfahren</button>
+                <button id="depart-confirm-no-${stop.id}"  class="btn btn-outline"  style="font-size:.85rem">Zurück</button>
+                ${leergutBtn}
+            </div>
+        </div>`;
+
+    card.appendChild(panel);
+
+    document.getElementById(`depart-confirm-yes-${stop.id}`)?.addEventListener('click', async () => {
+        panel.remove();
+        await proceedDepart(stop);
+    });
+    document.getElementById(`depart-confirm-no-${stop.id}`)?.addEventListener('click', () => {
+        panel.remove();
+    });
+    if (leergutItems.length > 0) {
+        document.getElementById(`depart-leergut-${stop.id}`)?.addEventListener('click', () => {
+            panel.remove();
+            showLeergutModal(stop);
+        });
+    }
+}
+
+async function proceedDepart(stop) {
+    const current    = tourData?.stops.find(s => s.id === stop.id) ?? stop;
+    const wasArrived = current.status === 'arrived';
+    if (wasArrived) {
+        await enqueueEvent('finished', tourData?.tour?.id ?? null, current.id, {});
+        updateStopStatusLocally(current, 'finished');
+    }
+    await enqueueEvent('depart', tourData?.tour?.id ?? null, current.id, {});
+    updateStopStatusLocally(current, current.status, { departed_at: new Date().toISOString() });
     renderStops();
-    showStatus('Abschluss gespeichert.', 'success');
+    showStatus(wasArrived ? 'Abgefahren und Stopp abgeschlossen.' : 'Abfahrt gespeichert.', 'success');
     await updatePendingCount();
     if (navigator.onLine) flushQueue();
 }
@@ -733,30 +1484,6 @@ async function handleItemDelivered(stop, item) {
     if (navigator.onLine) flushQueue();
 }
 
-async function handleLeergutausgleich(stop) {
-    const items = getLeergutItems(stop);
-    if (items.length === 0) return;
-
-    const listText = items.map(i => `${i.qty}× ${i.leergut_name}`).join('\n');
-    if (!confirm(`Leergutausgleich buchen?\n\n${listText}\n\nDiese Artikel werden dem Kunden gutgeschrieben.`)) return;
-
-    const payload = {
-        order_id: stop.order_id,
-        items:    items.map(i => ({
-            wawi_artikel_nr:        i.leergut_art_nr ?? '',
-            qty:                    i.qty,
-            leergut_name:           i.leergut_name,
-            unit_price_net_milli:   i.unit_price_net_milli,
-            unit_price_gross_milli: i.unit_price_gross_milli,
-            tax_rate_percent:       19,
-        })),
-    };
-
-    await enqueueEvent('leergutausgleich', tourData?.tour?.id ?? null, stop.id, payload);
-    showStatus('Leergutausgleich gespeichert.', 'success');
-    await updatePendingCount();
-    if (navigator.onLine) flushQueue();
-}
 
 // ── Kassenentnahme modal ──────────────────────────────────────────────────────
 
@@ -954,7 +1681,16 @@ async function handleUpload(stop) {
         });
 
         const s = tourData?.stops.find(s => s.id === stop.id);
-        if (s) s.uploads_count = (s.uploads_count ?? 0) + 1;
+        if (s) {
+            s.uploads_count = (s.uploads_count ?? 0) + 1;
+            if (!s.uploads) s.uploads = [];
+            s.uploads.push({
+                id:            result.upload_id,
+                mime_type:     file.type,
+                original_name: file.name,
+                created_at:    new Date().toISOString(),
+            });
+        }
 
         if (fileInput) fileInput.value = '';
 
@@ -964,6 +1700,24 @@ async function handleUpload(stop) {
         if (navigator.onLine) flushQueue();
     } catch (err) {
         showStatus('Upload fehlgeschlagen: ' + err.message, 'error');
+    }
+}
+
+async function openUploadFile(uploadId) {
+    if (!navigator.onLine) { showStatus('Datei-Ansicht nur online verfügbar.', 'error'); return; }
+    showStatus('Lade Datei…', 'info');
+    try {
+        const resp = await fetch(window.__DRIVER_CONFIG__.apiBase + '/uploads/' + uploadId, {
+            headers: { 'Authorization': 'Bearer ' + getToken(), 'Accept': '*/*' },
+        });
+        if (resp.status === 401) { handleAuthError(); return; }
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const blob    = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+        showStatus('', '');
+    } catch (e) {
+        showStatus('Datei konnte nicht geladen werden: ' + e.message, 'error');
     }
 }
 
@@ -1056,6 +1810,11 @@ function setSyncButtonState(isSyncing) {
 }
 
 function handleAuthError() {
+    if (window.__DRIVER_CONFIG__?.isSessionAuth) {
+        showStatus('Sitzung abgelaufen. Bitte neu anmelden.', 'error');
+        setTimeout(() => { window.location.href = '/anmelden'; }, 1500);
+        return;
+    }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY_LGY);
     showStatus('Sitzung abgelaufen. Bitte neu anmelden.', 'error');
@@ -1065,6 +1824,10 @@ function handleAuthError() {
 function fmtTime(iso) {
     if (!iso) return '';
     return new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtEuro(milliCents) {
+    return (milliCents / 1000).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

@@ -79,6 +79,37 @@
                 <div class="hint">ProduktDB, WaWi, Tourenplanung (Legacy)</div>
             </div>
         </div>
+
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--c-border)">
+            <div style="font-size:.8rem;font-weight:600;color:var(--c-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">
+                Status-Mapping (Ninox-Dropdown-Werte)
+            </div>
+            <div class="hint" style="margin-bottom:12px">
+                Tragen Sie hier die exakten Werte Ihres Ninox-Status-Dropdown-Felds ein.
+                Leer lassen = Status wird beim Push <strong>nicht</strong> übermittelt (Ninox-Wert bleibt unverändert).
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Status „Geliefert" in Ninox</label>
+                    <input type="text" name="ninox_status_delivered"
+                           value="{{ $settings['ninox']['status_delivered'] }}"
+                           placeholder="z.B. Geliefert">
+                    <div class="hint">Wird gesetzt wenn Fahrer Lieferung abschließt</div>
+                </div>
+                <div class="form-group">
+                    <label>Status „Bestätigt" in Ninox</label>
+                    <input type="text" name="ninox_status_confirmed"
+                           value="{{ $settings['ninox']['status_confirmed'] }}"
+                           placeholder="z.B. Bestätigt">
+                </div>
+                <div class="form-group">
+                    <label>Status „Storniert" in Ninox</label>
+                    <input type="text" name="ninox_status_cancelled"
+                           value="{{ $settings['ninox']['status_cancelled'] }}"
+                           placeholder="z.B. Storniert">
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -113,6 +144,59 @@
                    value="{{ $settings['wawi']['sync_token'] }}"
                    autocomplete="off">
             <div class="hint">Authentifizierungstoken für den WaWi-Sync-Endpunkt</div>
+        </div>
+    </div>
+</div>
+
+{{-- ── Stripe ────────────────────────────────────────────────────────────── --}}
+<div class="card" style="margin-bottom:24px">
+    <div class="card-header">Stripe</div>
+    <div style="padding:20px">
+        <div class="form-group" style="margin-bottom:16px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                <input type="hidden" name="stripe_enabled" value="0">
+                <input type="checkbox" name="stripe_enabled" value="1"
+                       @checked($settings['stripe']['enabled'])>
+                Stripe-Zahlung aktiviert
+            </label>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Secret Key</label>
+                <input type="password" name="stripe_secret_key"
+                       value="{{ $settings['stripe']['secret_key'] }}"
+                       autocomplete="off"
+                       placeholder="sk_live_...">
+                <div class="hint">Zu finden im Stripe Dashboard → Entwickler → API-Schlüssel</div>
+            </div>
+            <div class="form-group">
+                <label>Publishable Key</label>
+                <input type="text" name="stripe_public_key"
+                       value="{{ $settings['stripe']['public_key'] }}"
+                       placeholder="pk_live_...">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Webhook Secret</label>
+                <input type="password" name="stripe_webhook_secret"
+                       value="{{ $settings['stripe']['webhook_secret'] }}"
+                       autocomplete="off"
+                       placeholder="whsec_...">
+                <div class="hint">Stripe Dashboard → Entwickler → Webhooks → Signing Secret</div>
+            </div>
+            <div class="form-group">
+                <label>Währung</label>
+                <select name="stripe_currency">
+                    <option value="eur" @selected($settings['stripe']['currency'] === 'eur')>EUR — Euro</option>
+                    <option value="usd" @selected($settings['stripe']['currency'] === 'usd')>USD — US-Dollar</option>
+                    <option value="chf" @selected($settings['stripe']['currency'] === 'chf')>CHF — Schweizer Franken</option>
+                </select>
+            </div>
+        </div>
+        <div class="hint" style="margin-top:8px">
+            Webhook-URL für das Stripe Dashboard:
+            <code>{{ url('/api/payments/webhook/stripe') }}</code>
         </div>
     </div>
 </div>

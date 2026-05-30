@@ -168,6 +168,63 @@ class FulfillmentService
         });
     }
 
+    /**
+     * Revert a stop from ARRIVED back to OPEN.
+     * Safe to call only when no item fulfillments have been recorded.
+     */
+    public function undoArrived(TourStop $stop, ?int $userId = null): void
+    {
+        if ($stop->status !== TourStop::STATUS_ARRIVED) {
+            throw new \RuntimeException(
+                "TourStop #{$stop->id} is not arrived (current: {$stop->status})."
+            );
+        }
+
+        DB::transaction(function () use ($stop, $userId): void {
+            $stop->update([
+                'status'     => TourStop::STATUS_OPEN,
+                'arrived_at' => null,
+            ]);
+
+            $this->appendEvent($stop, 'undo_arrived', [], $userId);
+        });
+    }
+
+    /**
+     * Revert a stop from FINISHED back to ARRIVED.
+     * Also reverts the order status from DELIVERED to CONFIRMED.
+     * Stock movements created by markFinished() are NOT reversed.
+     */
+    public function undoFinished(TourStop $stop, ?int $userId = null): void
+    {
+        if ($stop->status !== TourStop::STATUS_FINISHED) {
+            throw new \RuntimeException(
+                "TourStop #{$stop->id} is not finished (current: {$stop->status})."
+            );
+        }
+
+        DB::transaction(function () use ($stop, $userId): void {
+            $stop->update([
+                'status'      => TourStop::STATUS_ARRIVED,
+                'finished_at' => null,
+            ]);
+
+            // Revert tour status from done if it was closed by this stop
+            $tour = $stop->tour;
+            if ($tour?->status === Tour::STATUS_DONE) {
+                $tour->update(['status' => Tour::STATUS_IN_PROGRESS]);
+            }
+
+            // Revert order status from delivered back to confirmed
+            $order = $stop->order;
+            if ($order?->status === Order::STATUS_DELIVERED) {
+                $order->update(['status' => Order::STATUS_CONFIRMED]);
+            }
+
+            $this->appendEvent($stop, 'undo_finished', [], $userId);
+        });
+    }
+
     // =========================================================================
     // Item-level delivery recording
     // =========================================================================

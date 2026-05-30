@@ -9,6 +9,7 @@ use App\Http\Requests\Shop\StoreCheckoutRequest;
 use App\Models\Address;
 use App\Models\Admin\DeferredTask;
 use App\Models\Delivery\RegularDeliveryTour;
+use App\Models\Employee\PublicHoliday;
 use App\Models\Event\EventLocation;
 use App\Models\Inventory\Warehouse;
 use App\Models\Orders\Order;
@@ -17,11 +18,14 @@ use App\Models\User;
 use App\Services\Catalog\JugendschutzService;
 use App\Services\Orders\OrderNumberService;
 use App\Services\Orders\OrderService;
+use App\Services\Payments\IbanValidator;
+use App\Services\Payments\SepaMandateService;
 use App\Services\Payments\ShopPayPalService;
 use App\Services\Payments\ShopStripeService;
 use App\Services\Rental\RentalBookingService;
 use App\Services\Rental\RentalCartService;
 use App\Services\Shop\CartService;
+use App\Services\Shop\LeergutCartService;
 use App\Services\Shop\TourAssignmentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +54,9 @@ class CheckoutController extends Controller
         private readonly OrderNumberService    $orderNumberService,
         private readonly TourAssignmentService $tourAssignmentService,
         private readonly RentalCartService     $rentalCart,
+        private readonly LeergutCartService    $leergutCart,
+        private readonly SepaMandateService    $sepaMandateService,
+        private readonly IbanValidator         $ibanValidator,
     ) {}
 
     /**
@@ -109,6 +116,25 @@ class CheckoutController extends Controller
             ->orderBy('name')
             ->get();
 
+        $pickupLocationsForJs = $pickupLocations
+            ->load('openingHours')
+            ->map(fn ($w) => [
+                'id'            => $w->id,
+                'name'          => $w->name,
+                'opening_hours' => $w->openingHours->mapWithKeys(
+                    fn ($h) => [$h->day_of_week => [
+                        'from' => substr($h->open_from, 0, 5),
+                        'to'   => substr($h->open_to,   0, 5),
+                    ]]
+                ),
+            ]);
+
+        $holidayDates = PublicHoliday::whereBetween('date', [today(), today()->addDays(90)])
+            ->pluck('date')
+            ->map(fn ($d) => \Carbon\Carbon::parse($d)->format('Y-m-d'))
+            ->values()
+            ->toArray();
+
         // Resolve tours for the customer's default delivery address
         $tours = collect();
         $customerTourId = null;
@@ -123,6 +149,33 @@ class CheckoutController extends Controller
                 $customer->customer_group_id,
             );
         }
+
+        $nextTourDates = $tours->mapWithKeys(
+            fn (RegularDeliveryTour $t) => [
+                $t->id => $this->tourAssignmentService->nextTourDate($t)?->format('Y-m-d'),
+            ]
+        );
+
+        // All active tours with delivery areas — used for client-side tour lookup
+        // when the customer enters a new address.
+        $allToursForJs = RegularDeliveryTour::where('active', true)
+            ->with('deliveryAreas')
+            ->get()
+            ->map(fn (RegularDeliveryTour $t) => [
+                'id'        => $t->id,
+                'name'      => $t->name,
+                'day_de'    => $t->dayOfWeekDe(),
+                'freq_de'   => $t->frequencyDe(),
+                'next_date' => $this->tourAssignmentService->nextTourDate($t)?->format('Y-m-d'),
+                'min_order' => $t->min_order_value_milli,
+                'areas'     => $t->deliveryAreas
+                    ->map(fn ($a) => [
+                        'postal_code' => $a->postal_code,
+                        'city_name'   => mb_strtolower($a->city_name ?? ''),
+                    ])
+                    ->values()
+                    ->toArray(),
+            ]);
 
         // Check if customer already has a regular_delivery_tour_id
         // (from a previous order or admin assignment)
@@ -146,7 +199,11 @@ class CheckoutController extends Controller
             'minAge'                => $minAge,
             'allowedPaymentMethods' => $allowedPaymentMethods,
             'pickupLocations'       => $pickupLocations,
+            'pickupLocationsForJs'  => $pickupLocationsForJs,
+            'holidayDates'          => $holidayDates,
             'tours'                 => $tours,
+            'nextTourDates'         => $nextTourDates,
+            'allToursForJs'         => $allToursForJs,
             'customerTourId'        => $customerTourId,
             'defaultAddress'        => $defaultAddress,
             'hasRentalItems'        => $hasRentalItems,
@@ -156,6 +213,8 @@ class CheckoutController extends Controller
             'rentalFrom'            => $rentalFrom,
             'rentalUntil'           => $rentalUntil,
             'rentalTotal'           => $rentalTotal,
+            'leergutTotal'          => $this->leergutCart->getCreditTotal(),
+            'sepaMandateInfo'       => $this->sepaMandateService->findForCustomer($customer),
         ]);
     }
 
@@ -271,6 +330,11 @@ class CheckoutController extends Controller
 
                     if ($validated['delivery_type'] === Order::DELIVERY_PICKUP) {
                         $updateData['pickup_location_id'] = $validated['pickup_warehouse_id'];
+                        $updateData['delivery_date']      = isset($validated['pickup_date'])
+                            ? \Carbon\Carbon::parse($validated['pickup_date'])
+                            : null;
+                        $updateData['pickup_time_from']   = $validated['pickup_time_from'] ?? null;
+                        $updateData['pickup_time_to']     = $validated['pickup_time_to'] ?? null;
                     }
 
                     $order->update($updateData);
@@ -310,17 +374,27 @@ class CheckoutController extends Controller
                 ->withErrors('Beim Erstellen deiner Bestellung ist ein Fehler aufgetreten. Bitte versuche es erneut.');
         }
 
-        // Clear the product cart AFTER successful order creation
-        $this->cart->clear($user);
-
-        // Clear rental cart if items were attached to the order
-        if ($hasRental) {
-            $this->rentalCart->clear();
+        // For redirect-based payments (Stripe, PayPal) the user may cancel — keep the
+        // cart intact until payment is confirmed. Clear only for immediate methods.
+        if (! in_array($validated['payment_method'], [Order::PAY_STRIPE, Order::PAY_PAYPAL])) {
+            $this->cart->clear($user);
+            if ($hasRental) {
+                $this->rentalCart->clear();
+            }
         }
 
         // BUG-6 fix: persist chosen tour as customer's Stamm-Tour for future orders.
         if ($tourId && $customer->regular_delivery_tour_id === null) {
             $customer->update(['regular_delivery_tour_id' => $tourId]);
+        }
+
+        // Save SEPA mandate when customer enters a new one
+        if ($validated['payment_method'] === Order::PAY_SEPA
+            && ! filter_var($validated['sepa_use_existing'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            && ! empty($validated['sepa_iban'])
+        ) {
+            $iban = $this->ibanValidator->normalize($validated['sepa_iban']);
+            $this->sepaMandateService->store($customer, $iban, $validated['sepa_account_holder'] ?? '');
         }
 
         // Handle payment method
@@ -338,6 +412,13 @@ class CheckoutController extends Controller
         }
 
         $order->load(['items.product', 'deliveryAddress', 'pickupLocation', 'regularDeliveryTour']);
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if ($user) {
+            $this->cart->clear($user);
+            $this->rentalCart->clear();
+        }
 
         return view('shop.checkout-success', compact('order'));
     }
@@ -378,6 +459,13 @@ class CheckoutController extends Controller
         // Confirm the order
         $order->update(['status' => Order::STATUS_CONFIRMED]);
         $this->queueConfirmationEmail($order);
+
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        if ($user) {
+            $this->cart->clear($user);
+            $this->rentalCart->clear();
+        }
 
         return redirect()->route('checkout.success', $order);
     }
@@ -512,12 +600,18 @@ class CheckoutController extends Controller
     private function handleStripePayment(Order $order): RedirectResponse
     {
         try {
+            /** @var User $user */
+            $user         = Auth::user();
+            $cartData     = $this->cart->calculate($user);
+            $leergutTotal = $this->leergutCart->getCreditTotal();
+            $totalMilli   = max(0, $cartData['total_milli'] - $leergutTotal);
+
             $stripe = app(ShopStripeService::class);
 
             $successUrl = route('checkout.success', $order) . '?stripe=success';
             $cancelUrl  = route('checkout') . '?stripe=cancelled';
 
-            $url = $stripe->createCheckoutSession($order, $successUrl, $cancelUrl);
+            $url = $stripe->createCheckoutSession($order, $successUrl, $cancelUrl, $totalMilli);
 
             return redirect($url);
         } catch (\Throwable $e) {

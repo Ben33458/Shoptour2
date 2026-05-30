@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Payments;
 
 use App\Models\Orders\Order;
+use App\Models\Pricing\AppSetting;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -23,8 +24,8 @@ class ShopStripeService
 
     public function __construct()
     {
-        $this->secretKey = (string) config('services.stripe.secret_key', '');
-        $this->currency  = (string) config('services.stripe.currency', 'eur');
+        $this->secretKey = AppSetting::get('stripe.secret_key', (string) config('services.stripe.secret_key', ''));
+        $this->currency  = AppSetting::get('stripe.currency',     (string) config('services.stripe.currency',  'eur'));
     }
 
     /**
@@ -34,15 +35,18 @@ class ShopStripeService
      *
      * @throws RuntimeException when Stripe API call fails
      */
-    public function createCheckoutSession(Order $order, string $successUrl, string $cancelUrl): string
-    {
+    public function createCheckoutSession(
+        Order  $order,
+        string $successUrl,
+        string $cancelUrl,
+        int    $totalMilli,
+    ): string {
         if ($this->secretKey === '') {
             throw new RuntimeException('Stripe secret key is not configured.');
         }
 
-        // Total in cents (Stripe uses integer cents, we store milli-cents)
-        $totalMilli = $order->total_gross_milli + $order->total_pfand_brutto_milli;
-        $amountCents = (int) round($totalMilli / 1_000);
+        // totalMilli is passed by the caller (cart total incl. pfand minus leergut credit)
+        $amountCents = (int) round($totalMilli / 10_000);
 
         $params = [
             'mode'                                                      => 'payment',

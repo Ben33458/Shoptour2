@@ -12,6 +12,7 @@ use App\Models\Employee\EmployeeTask;
 use App\Models\Employee\EmployeeTaskComment;
 use App\Models\Employee\Shift;
 use App\Models\Employee\ShiftReport;
+use App\Models\Employee\MissingProductReport;
 use App\Models\Employee\TimeEntry;
 use App\Models\RecurringTaskCompletion;
 use App\Models\RecurringTaskSetting;
@@ -556,5 +557,208 @@ class MeinController extends Controller
         }
 
         $this->tracking->clockIn($employee, $shift);
+    }
+
+    // ── Feedback-Verlauf ─────────────────────────────────────────────────────
+
+    public function feedbackIndex(Request $request)
+    {
+        $employee = $this->employee();
+
+        // Default: feedbacks from today's shift window
+        $shiftStart = Shift::where('employee_id', $employee->id)
+            ->whereDate('planned_start', today())
+            ->orderBy('planned_start')
+            ->value('planned_start');
+        $defaultFrom = $shiftStart ? \Carbon\Carbon::parse($shiftStart) : today();
+
+        $status = $request->get('status', 'shift');
+        $query  = EmployeeFeedback::where('employee_id', $employee->id)
+            ->orderByDesc('created_at');
+
+        if ($status === 'shift') {
+            $query->where('created_at', '>=', $defaultFrom);
+        } elseif (in_array($status, ['open', 'in_progress', 'done', 'wontfix'])) {
+            $query->where('status', $status);
+        }
+
+        $feedbacks = $query->get();
+
+        return view('mein.feedback', compact('employee', 'feedbacks', 'status'));
+    }
+
+    // ── Schichtberichte nachträglich ──────────────────────────────────────────
+
+    public function schichtberichteIndex()
+    {
+        $employee = $this->employee();
+
+        $reports = ShiftReport::where('employee_id', $employee->id)
+            ->orderByDesc('report_date')
+            ->limit(30)
+            ->get();
+
+        // Shifts without a report (last 14 days) so employee can add missing ones
+        $reportedDates = $reports->pluck('report_date')->map(fn($d) => $d->toDateString())->toArray();
+        $shiftsWithoutReport = Shift::where('employee_id', $employee->id)
+            ->where('planned_start', '>=', now()->subDays(14))
+            ->where('planned_start', '<', today())
+            ->get()
+            ->filter(fn($s) => !in_array($s->planned_start->toDateString(), $reportedDates));
+
+        $reportTemplates = \App\Models\Employee\ChecklistTemplate::active()->with('items')->get();
+
+        return view('mein.schichtberichte', compact('employee', 'reports', 'shiftsWithoutReport', 'reportTemplates'));
+    }
+
+    public function schichtNachtrag(Request $request)
+    {
+        $employee = $this->employee();
+        $date     = $request->get('date', today()->toDateString());
+
+        $shift = Shift::where('employee_id', $employee->id)
+            ->whereDate('planned_start', $date)
+            ->first();
+
+        $report = ShiftReport::where('employee_id', $employee->id)
+            ->whereDate('report_date', $date)
+            ->with('checklistItems')
+            ->first();
+
+        $reportTemplates = \App\Models\Employee\ChecklistTemplate::active()->with('items')->get();
+
+        return view('mein.schicht-nachtrag', compact('employee', 'shift', 'report', 'reportTemplates', 'date'));
+    }
+
+    public function schichtNachtragSave(Request $request)
+    {
+        $employee = $this->employee();
+        $data     = $request->validate([
+            'date'            => 'required|date|before_or_equal:today',
+            'summary'         => 'nullable|string|max:5000',
+            'cash_difference' => 'nullable|numeric',
+            'incident_level'  => 'nullable|integer|min:0|max:3',
+            'incident_notes'  => 'nullable|string|max:2000',
+            'checklist'       => 'nullable|array',
+        ]);
+
+        $shiftId = Shift::where('employee_id', $employee->id)
+            ->whereDate('planned_start', $data['date'])
+            ->value('id');
+
+        $report = ShiftReport::updateOrCreate(
+            ['employee_id' => $employee->id, 'report_date' => $data['date']],
+            [
+                'shift_id'        => $shiftId,
+                'summary'         => $data['summary'] ?? '',
+                'cash_difference' => $data['cash_difference'] ?? 0,
+                'incident_level'  => $data['incident_level'] ?? 0,
+                'incident_notes'  => $data['incident_notes'] ?? '',
+                'is_submitted'    => true,
+                'submitted_at'    => now(),
+            ]
+        );
+
+        // Sync checklist
+        $checklist = $data['checklist'] ?? [];
+        $items     = ChecklistItem::all()->keyBy('id');
+        $syncData  = [];
+        foreach ($items as $id => $item) {
+            $syncData[$id] = ['is_checked' => isset($checklist[$id]), 'note' => ''];
+        }
+        $report->checklistItems()->sync($syncData);
+
+        return redirect()->route('mein.schichtberichte')->with('success', 'Schichtbericht für ' . \Carbon\Carbon::parse($data['date'])->locale('de')->isoFormat('D. MMMM') . ' gespeichert.');
+    }
+
+    // ── Fehlende Produkte ─────────────────────────────────────────────────────
+
+    public function fehlendeProdukteIndex()
+    {
+        $employee = $this->employee();
+        $myReports = MissingProductReport::where('employee_id', $employee->id)
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get();
+        return view('mein.fehlende-produkte', compact('employee', 'myReports'));
+    }
+
+    public function fehlendeProdukteStore(Request $request)
+    {
+        $employee = $this->employee();
+        $data = $request->validate([
+            'product_id'   => 'nullable|integer|exists:products,id',
+            'artikelnummer' => 'nullable|string|max:50',
+            'produktname'  => 'required|string|max:255',
+            'info_text'    => 'nullable|string|max:1000',
+        ]);
+
+        MissingProductReport::create([
+            ...$data,
+            'employee_id' => $employee->id,
+        ]);
+
+        return redirect()->route('mein.fehlende-produkte')->with('success', 'Meldung wurde gespeichert.');
+    }
+
+    public function produktSuche(Request $request)
+    {
+        $q = trim($request->get('q', ''));
+        if (strlen($q) < 2) {
+            return response()->json([]);
+        }
+
+        $results = DB::table('products')
+            ->where(function ($query) use ($q) {
+                $query->where('produktname', 'like', "%{$q}%")
+                      ->orWhere('artikelnummer', 'like', "%{$q}%");
+            })
+            ->orderBy('produktname')
+            ->limit(10)
+            ->get(['id', 'artikelnummer', 'produktname']);
+
+        return response()->json($results);
+    }
+
+    // ── Aufgaben-Zusammenfassung ──────────────────────────────────────────────
+
+    public function aufgabenZusammenfassung()
+    {
+        $employee = $this->employee();
+
+        // Recurring tasks completed today by this employee
+        $recurringDone = RecurringTaskCompletion::where('employee_id', $employee->id)
+            ->whereDate('completed_at', today())
+            ->get();
+
+        $taskNames = [];
+        if ($recurringDone->isNotEmpty()) {
+            $ids = $recurringDone->pluck('ninox_task_id')->toArray();
+            $taskNames = DB::table('ninox_77_regelmaessige_aufgaben')
+                ->whereIn('ninox_id', $ids)
+                ->pluck('aufgabe', 'ninox_id');
+        }
+
+        $recurring = $recurringDone->map(fn($c) => [
+            'name'         => $taskNames[$c->ninox_task_id] ?? 'Aufgabe #' . $c->ninox_task_id,
+            'completed_at' => $c->completed_at->format('H:i'),
+            'note'         => $c->note,
+        ]);
+
+        // Admin-assigned tasks completed today
+        $adminDone = EmployeeTask::where('assigned_to', $employee->id)
+            ->where('status', 'done')
+            ->whereDate('updated_at', today())
+            ->get(['id', 'title', 'updated_at']);
+
+        return response()->json([
+            'date'     => today()->locale('de')->isoFormat('dddd, D. MMMM YYYY'),
+            'employee' => $employee->first_name . ' ' . $employee->last_name,
+            'recurring' => $recurring,
+            'admin'    => $adminDone->map(fn($t) => [
+                'name'         => $t->title,
+                'completed_at' => $t->updated_at->format('H:i'),
+            ]),
+        ]);
     }
 }

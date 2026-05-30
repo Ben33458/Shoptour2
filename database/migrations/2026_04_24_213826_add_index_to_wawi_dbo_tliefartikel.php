@@ -11,11 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement('ALTER TABLE wawi_dbo_tliefartikel ADD INDEX wawi_tliefartikel_artikel_idx (tArtikel_kArtikel(32))');
+        if (Schema::hasTable('wawi_dbo_tliefartikel')) {
+            DB::statement('ALTER TABLE wawi_dbo_tliefartikel ADD INDEX wawi_tliefartikel_artikel_idx (tArtikel_kArtikel(32))');
+        }
     }
 
     public function down(): void
     {
-        DB::statement('ALTER TABLE wawi_dbo_tliefartikel DROP INDEX wawi_tliefartikel_artikel_idx');
+        if (Schema::hasTable('wawi_dbo_tliefartikel')) {
+            DB::statement('ALTER TABLE wawi_dbo_tliefartikel DROP INDEX wawi_tliefartikel_artikel_idx');
+        }
     }
 };

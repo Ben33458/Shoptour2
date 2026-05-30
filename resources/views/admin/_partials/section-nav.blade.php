@@ -68,7 +68,7 @@
 </nav>
 
 {{-- ── Katalog ─────────────────────────────────────────────────── --}}
-@elseif(request()->routeIs('admin.products.*', 'admin.categories.*', 'admin.customer-groups.*', 'admin.catalog.overview'))
+@elseif(request()->routeIs('admin.products.*', 'admin.categories.*', 'admin.customer-groups.*', 'admin.catalog.overview', 'admin.catalog.recent-changes', 'admin.leergut-zuweisungen.*'))
 <nav class="section-nav">
     <a href="{{ route('admin.products.index') }}"
        class="{{ request()->routeIs('admin.products.index', 'admin.products.create', 'admin.products.show', 'admin.products.edit') ? 'active' : '' }}">Produkte</a>
@@ -76,10 +76,14 @@
        class="{{ request()->routeIs('admin.products.bulk-alkohol*') ? 'active' : '' }}">Alkohol-Daten</a>
     <a href="{{ route('admin.catalog.overview') }}"
        class="{{ request()->routeIs('admin.catalog.overview') ? 'active' : '' }}">Gesamtübersicht</a>
+    <a href="{{ route('admin.catalog.recent-changes') }}"
+       class="{{ request()->routeIs('admin.catalog.recent-changes') ? 'active' : '' }}">Letzte Änderungen</a>
     <a href="{{ route('admin.categories.index') }}"
        class="{{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">Kategorien</a>
     <a href="{{ route('admin.customer-groups.index') }}"
        class="{{ request()->routeIs('admin.customer-groups.*') ? 'active' : '' }}">Kundengruppen</a>
+    <a href="{{ route('admin.leergut-zuweisungen.index') }}"
+       class="{{ request()->routeIs('admin.leergut-zuweisungen.*') ? 'active' : '' }}">Leergut-Zuweisungen</a>
 </nav>
 
 {{-- ── Lager & Einkauf ─────────────────────────────────────────── --}}
@@ -115,7 +119,7 @@
 </nav>
 
 {{-- ── Personal ────────────────────────────────────────────────── --}}
-@elseif(request()->routeIs('admin.employees.*', 'admin.shifts.*', 'admin.time.*', 'admin.vacation.*', 'admin.onboarding.*', 'admin.emp-tasks.*', 'admin.recurring-tasks.*', 'employee.*'))
+@elseif(request()->routeIs('admin.employees.*', 'admin.shifts.*', 'admin.time.*', 'admin.vacation.*', 'admin.onboarding.*', 'admin.emp-tasks.*', 'admin.recurring-tasks.*', 'employee.*', 'admin.missing-products.*'))
 <nav class="section-nav">
     <a href="{{ route('admin.employees.index') }}"
        class="{{ request()->routeIs('admin.employees.*') ? 'active' : '' }}">Mitarbeiter</a>
@@ -127,6 +131,14 @@
        class="{{ request()->routeIs('admin.vacation.*') ? 'active' : '' }}">Urlaub</a>
     <a href="{{ route('admin.emp-tasks.index') }}"
        class="{{ request()->routeIs('admin.emp-tasks.*', 'admin.recurring-tasks.*') ? 'active' : '' }}">Aufgaben</a>
+    <a href="{{ route('admin.missing-products.index') }}"
+       class="{{ request()->routeIs('admin.missing-products.*') ? 'active' : '' }}">
+        Fehlende Produkte
+        @php $openMissing = \App\Models\Employee\MissingProductReport::where('status','open')->count(); @endphp
+        @if($openMissing > 0)
+            <span class="snav-badge">{{ $openMissing }}</span>
+        @endif
+    </a>
     <a href="{{ route('admin.onboarding.index') }}"
        class="{{ request()->routeIs('admin.onboarding.*') ? 'active' : '' }}">
         Onboarding
@@ -177,7 +189,7 @@
 </nav>
 
 {{-- ── Administration ──────────────────────────────────────────── --}}
-@elseif(request()->routeIs('admin.users.*', 'admin.driver-tokens.*', 'admin.diagnostics', 'admin.deploy.*', 'admin.audit-logs.*', 'admin.tasks.*', 'admin.settings.shop_display.*'))
+@elseif(request()->routeIs('admin.users.*', 'admin.driver-tokens.*', 'admin.diagnostics', 'admin.deploy.*', 'admin.audit-logs.*', 'admin.tasks.*', 'admin.settings.shop_display.*', 'admin.settings.integrations*'))
 <nav class="section-nav">
     <a href="{{ route('admin.users.index') }}"
        class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">Benutzer &amp; Rollen</a>
@@ -193,6 +205,8 @@
        class="{{ request()->routeIs('admin.deploy.*') ? 'active' : '' }}">Deployment</a>
     <a href="{{ route('admin.settings.shop_display.edit') }}"
        class="{{ request()->routeIs('admin.settings.shop_display.*') ? 'active' : '' }}">Shop-Ansicht</a>
+    <a href="{{ route('admin.settings.integrations') }}"
+       class="{{ request()->routeIs('admin.settings.integrations*') ? 'active' : '' }}">Integrationen</a>
 </nav>
 
 {{-- ── Finanzen / Mahnwesen ─────────────────────────────────────── --}}

@@ -4,6 +4,18 @@
 
 @section('content')
 
+{{-- Tab-Navigation --}}
+<div style="display:flex;gap:0;margin-bottom:20px;border-bottom:2px solid #e5e7eb">
+    <a href="{{ route('admin.einkauf.index') }}"
+       style="padding:9px 20px;font-weight:600;font-size:.9rem;border-bottom:2px solid var(--c-primary);margin-bottom:-2px;color:var(--c-primary);text-decoration:none">
+        Bestellungen
+    </a>
+    <a href="{{ route('admin.einkauf.anlieferungen.index') }}"
+       style="padding:9px 20px;font-size:.9rem;color:#6b7280;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px">
+        Anlieferungen
+    </a>
+</div>
+
 <div class="card">
     <div class="card-header flex justify-between items-center">
         <span>Einkaufsbestellungen ({{ $purchaseOrders->total() }})</span>

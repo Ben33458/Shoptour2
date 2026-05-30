@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Inventory;
 
+use App\Models\WarehouseOpeningHour;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -45,6 +46,11 @@ class Warehouse extends Model
     // =========================================================================
     // Relationships
     // =========================================================================
+
+    public function openingHours(): HasMany
+    {
+        return $this->hasMany(WarehouseOpeningHour::class)->orderBy('day_of_week');
+    }
 
     /**
      * Current stock snapshots held in this warehouse.
