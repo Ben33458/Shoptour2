@@ -23,7 +23,7 @@
 
 ## Wichtige Befunde beim Erstellen
 - **Testabdeckung ist dünn:** automatisierte Tests existieren nur für Events/Angebote, Wissensassistent, Jugendschutz und Kontoaktivierung (`tests/Feature/`). Für Shop, Checkout, Preisfindung, Pfand, Touren, Rechnungen, POS gibt es **keine** automatisierten Tests → diese Bereiche können nach Regel 1 aktuell höchstens **Beta** sein, bis eine Abnahme dokumentiert ist.
-- **POS/TSE:** In diesem Repo gibt es nur `POST /api/pos/sale` und `GET /api/pos/products` (`app/Http/Controllers/Api/PosSaleController.php`), **ohne Auth-Middleware** („for MVP") und ohne TSE-Code. Die funktionsfähige TSE läuft laut Team in der Kasse selbst (vermutlich JTL LS POS; `PROJ-39` liest Bondaten von dort). **Zu klären:** Welche Komponente ist „unser POS"? Danach PROJ-33 neu fassen (Spec sagt noch „Planned / kein TSE").
+- **POS/TSE:** Die Kasse (`kasse.kolabri.de`, TSE funktionsfähig laut Team) ist **nicht in diesem Repo**: keine Referenz auf die Domain, kein TSE-/DSFinV-K-Code. Im Repo liegen nur `POST /api/pos/sale` und `GET /api/pos/products` (`Api/PosSaleController.php`), **ohne Auth-Middleware** („for MVP"), sowie Auswertungen (`PROJ-39`, `PosStatisticsService`). **Zu klären:** In welchem Repo/Server läuft die Kasse, und nutzt sie die offene `/api/pos/*`-API? Falls ja: Auth ist vor Produktivnutzung Pflicht. PROJ-33 ist als Spec veraltet („Planned / kein TSE").
 - **Spec/INDEX-Drift:** INDEX.md meldet z. B. PROJ-13/15/23 „In Progress", die Spec-Header sagen „Planned".
 - **PROJ-35** (Kassenverwaltung) ist im INDEX „Planned", im Code existieren aber `CashRegisterController` + `admin/cash-registers`.
 - **PROJ-36** (Schicht/Zeit/Urlaub) ist im INDEX „Planned", im Code existieren `ShiftController`, `TimeTrackingAdminController`, `VacationAdminController`, `TimeClockController`.
@@ -34,7 +34,7 @@
 
 | Funktion | Reife (Vorschlag) | Nachweis im Code | Lücke / zu klären | Geprüft |
 |---|---|---|---|---|
-| Registrierung, Login, Kontoaktivierung (PROJ-1) | Beta | `Auth/*`, `CustomerActivationService`, `tests/Feature/CustomerActivationTest.php` | Google OAuth: Stand unklar; Aktivierung ist getestet | – |
+| Registrierung, Login, Kontoaktivierung, Google OAuth (PROJ-1) | Beta | `Auth/*`, `SocialController`, `/auth/google`, Socialite; `CustomerActivationTest` | Google läuft laut Team; Aktivierung getestet; Login/Reset ohne Tests | – |
 | Produktkatalog, Suche, Filter (PROJ-2) | Beta | `Shop/ShopController`, `Api/ShopProductController` | keine Tests; Gastpreis-Logik prüfen | – |
 | Warenkorb Gast + Auth (PROJ-3) | Beta | `Shop/CartController`, `CartService`, `CartMergeService` | keine Tests | – |
 | Checkout Heimdienst/Abholung (PROJ-4) | Beta | `Shop/CheckoutController` | keine Tests; Lieferfenster-Logik abnehmen | – |
@@ -44,7 +44,7 @@
 | Stammsortiment / Favoriten (PROJ-20) | Beta | `FavoriteController` | Mindestbestand/Notizen prüfen | – |
 | Unterbenutzer & Rechte (PROJ-21) | Beta | `SubUserController`, `SubUser::defaultPermissions` | Rechtematrix abnehmen | – |
 | Jugendschutz (Alterscheck) | Beta | `JugendschutzService`, `tests/Feature/JugendschutzTest.php` | getestet, Produktivnutzung bestätigen | – |
-| Newsletter (PROJ-27) | Entwurf | nur Spec + Erwähnungen | keinen eigenen Controller gefunden | – |
+| Newsletter (PROJ-27) | Entwurf | nur Kundenfelder für E-Mail-Präferenzen (Migration `add_email_preferences_to_customers`) | kein Versand-/Gruppen-Controller; laut Team in der Praxis nicht getestet | – |
 
 ## 2. Zahlung & Finanzen
 
@@ -64,8 +64,8 @@
 
 | Funktion | Reife (Vorschlag) | Nachweis | Lücke / zu klären | Geprüft |
 |---|---|---|---|---|
-| POS-Kasse mit TSE | **Live (laut Team)** | TSE laut Team funktionsfähig; **im Repo nicht nachweisbar** | Wo läuft sie? Nachweis (TSE-Zertifikat, Kassenmeldung) ablegen | – |
-| POS-API (Produktsuche, Verkauf) | Entwurf | `Api/PosProductController`, `PosSaleController` | **ohne Auth**, TSE nicht im Code → vor Produktivnutzung absichern | – |
+| POS-Kasse mit TSE (`kasse.kolabri.de`) | **Live (laut Team)** | Betrieb laut Team; **Code liegt außerhalb dieses Repos** | Repo/Server benennen; TSE-Nachweis (Zertifikat, Kassenmeldung) ablegen; eigene Reife-Zeilen (Barcode, Pfand-Rücknahme, Bon, Storno) dort pflegen | – |
+| POS-API (Produktsuche, Verkauf) in diesem Repo | Beta, **Sicherheitslücke** | `Api/PosProductController`, `PosSaleController`, `routes/api.php` (nur Throttle) | **ohne Auth**: jeder kann Verkäufe anlegen, falls öffentlich erreichbar; Token-Auth ergänzen, prüfen ob `kasse.kolabri.de` sie nutzt | – |
 | Kassenverwaltung / Kassenbuch (PROJ-35) | Beta | `CashRegisterController`, `views/admin/cash-registers` | Spec „Planned"; Kassenbuch/Transfers prüfen | – |
 | POS-Statistik | Beta | `PosStatisticsService` | Datenquelle JTL | – |
 
@@ -134,7 +134,7 @@
 
 ## Nächste Schritte (ab Mittwoch)
 1. Team geht die Spalte „Reife" durch und trägt „Geprüft" (Datum + Kürzel) ein.
-2. Fragen klären: POS/TSE-Verortung, Newsletter, Umsatzmeldungen, Google OAuth.
+2. Fragen klären: Repo der Kasse (`kasse.kolabri.de`) und Nutzung von `/api/pos/*`; Umsatzmeldungen (PROJ-34). Newsletter ist als Entwurf eingestuft, Google OAuth ist bestätigt.
 3. `INDEX.md`: Spalte „Reife" ergänzen; Spec-Header angleichen.
 4. Tests für die Kernpfade (Preisfindung, Checkout, Pfand, Rechnungen) anlegen, damit „Beta → Live" möglich wird.
 5. Danach: Features aus Abschnitt 8 als eigene PROJ-Specs (ab PROJ-41) schreiben.
